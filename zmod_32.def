@@ -1,0 +1,3 @@
+LIBRARY zmod_32.dll
+EXPORTS
+    DummyExport=DummyExport @1
