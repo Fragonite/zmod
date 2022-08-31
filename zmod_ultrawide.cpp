@@ -27,6 +27,8 @@ LSTATUS(WINAPI *_RegSetValueExA)
 HRESULT(APIENTRY *_Reset)
 (IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters);
 
+int(WINAPI *_GetSystemMetrics)(int nIndex) = GetSystemMetrics;
+
 LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
     auto rv = _RegQueryValueExA(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
@@ -69,6 +71,19 @@ void WriteMemory(void *address, void *data, size_t size)
     VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &oldProtect);
     memcpy(address, data, size);
     VirtualProtect(address, size, oldProtect, &oldProtect);
+}
+
+int WINAPI HookedGetSystemMetrics(int nIndex)
+{
+    if (nIndex == 0)
+    {
+        return globals.width;
+    }
+    else if (nIndex == 1)
+    {
+        return 2160; // This hook is a fix for getting 2560x1080 to run in fullscreen without running a higher resolution first
+    }
+    return _GetSystemMetrics(nIndex);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
@@ -115,7 +130,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         uint8_t aspectRatioPatch[6] = {0xDD, 0x05};
         auto aspectRatioPointer = &globals.aspectRatio;
         memcpy(&aspectRatioPatch[2], &aspectRatioPointer, 4);
-        WriteMemory((void *)(base + 0x22DD1F), &aspectRatioPatch, sizeof(aspectRatioPatch)); // Aspect Ratio
+        float cutsceneAspectRatio = (float)globals.width / (float)globals.height;
+        float multiplayerAspectRatio = (float)(globals.width * 2) / (float)globals.height;
+
+        WriteMemory((void *)(base + 0x22DD1F), &aspectRatioPatch, sizeof(aspectRatioPatch));             // Aspect Ratio
+        WriteMemory((void *)(base + 0x61DF10), &cutsceneAspectRatio, sizeof(cutsceneAspectRatio));       // Fixed Cutscene Aspect Ratio
+        WriteMemory((void *)(base + 0x61DF18), &multiplayerAspectRatio, sizeof(multiplayerAspectRatio)); // Fixed Multiplayer Cutscene Aspect Ratio
 
         if (!(globals.windowed))
         {
@@ -130,6 +150,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         DetourAttach(&(PVOID &)_RegQueryValueExA, HookedRegQueryValueExA);
         DetourAttach(&(PVOID &)_RegSetValueExA, HookedRegSetValueExA);
         DetourAttach(&(PVOID &)_Reset, HookedReset);
+        DetourAttach(&(PVOID &)_GetSystemMetrics, HookedGetSystemMetrics);
         DetourTransactionCommit();
         break;
     }
