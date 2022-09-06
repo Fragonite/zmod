@@ -3,11 +3,10 @@
 #include <string>
 #include <filesystem>
 #include <map>
+#include "d3d9.h"
+#include "zmod_dw8xlce_ultrawide.hpp"
 #include "detours.h"
 #include "io_helper.cpp"
-
-#define IDirect3DDevice9 void
-#define D3DPRESENT_PARAMETERS void
 
 struct
 {
@@ -18,16 +17,50 @@ struct
     ini_map iniMap;
 } static globals;
 
-LSTATUS(WINAPI *_RegQueryValueExA)
-(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData) = RegQueryValueExA;
+Direct3DCreate9_t *_Direct3DCreate9 = (Direct3DCreate9_t *)GetProcAddress(GetModuleHandleA("d3d9.dll"), "Direct3DCreate9");
+CreateDevice_t *_CreateDevice = nullptr;
+Reset_t *_Reset = nullptr;
+RegQueryValueExA_t *_RegQueryValueExA = RegQueryValueExA;
+RegSetValueExA_t *_RegSetValueExA = RegSetValueExA;
+GetSystemMetrics_t *_GetSystemMetrics = GetSystemMetrics;
+function_22DC70_t *_AspectRatio = nullptr;
+// function_1158A0_t *_AspectRatio = nullptr;
 
-LSTATUS(WINAPI *_RegSetValueExA)
-(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData) = RegSetValueExA;
+IDirect3D9 *WINAPI HookedDirect3DCreate9(UINT SDKVersion)
+{
+    auto rv = _Direct3DCreate9(SDKVersion);
+    if (rv == nullptr)
+        ;
 
-HRESULT(APIENTRY *_Reset)
-(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters);
+    auto vtable = *(uint32_t **)rv;
+    _CreateDevice = (CreateDevice_t *)(vtable[16]);
 
-int(WINAPI *_GetSystemMetrics)(int nIndex) = GetSystemMetrics;
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+    DetourDetach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
+    DetourAttach(&(PVOID &)_CreateDevice, HookedCreateDevice);
+    DetourTransactionCommit();
+
+    return rv;
+}
+
+HRESULT APIENTRY HookedCreateDevice(IDirect3D9 *pD3D9, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface)
+{
+    auto rv = _CreateDevice(pD3D9, Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
+    if (rv != D3D_OK)
+        ;
+
+    auto vtable = *(uint32_t **)(*ppReturnedDeviceInterface);
+    _Reset = (Reset_t *)vtable[16];
+
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+    DetourDetach(&(PVOID &)_CreateDevice, HookedCreateDevice);
+    DetourAttach(&(PVOID &)_Reset, HookedReset);
+    DetourTransactionCommit();
+
+    return rv;
+}
 
 LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
@@ -61,7 +94,7 @@ LSTATUS WINAPI HookedRegSetValueExA(HKEY hKey, LPCSTR lpValueName, DWORD Reserve
 
 HRESULT APIENTRY HookedReset(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters)
 {
-    ((uint32_t *)pPresentationParameters)[8] = globals.windowed;
+    pPresentationParameters->Windowed = globals.windowed;
     return _Reset(pDevice, pPresentationParameters);
 }
 
@@ -86,12 +119,28 @@ int WINAPI HookedGetSystemMetrics(int nIndex)
     return _GetSystemMetrics(nIndex);
 }
 
+void __stdcall HookedAspectRatio(uint32_t a0, float *a1)
+{
+    if (a1 != nullptr)
+    {
+        if (a1[6] == 360.0)
+        {
+            globals.aspectRatio = (double)(globals.width * 2) / (double)globals.height;
+        }
+        else
+        {
+            globals.aspectRatio = (double)globals.width / (double)globals.height;
+        }
+    }
+    _AspectRatio(a0, a1);
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
     switch (fdwReason)
     {
     case DLL_PROCESS_ATTACH:
-        if (DisableThreadLibraryCalls(hinstDLL))
+        if (!(DisableThreadLibraryCalls(hinstDLL)))
             ;
 
         std::wstring moduleName;
@@ -137,20 +186,24 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         WriteMemory((void *)(base + 0x61DF10), &cutsceneAspectRatio, sizeof(cutsceneAspectRatio));       // Fixed Cutscene Aspect Ratio
         WriteMemory((void *)(base + 0x61DF18), &multiplayerAspectRatio, sizeof(multiplayerAspectRatio)); // Fixed Multiplayer Cutscene Aspect Ratio
 
+        _AspectRatio = (function_22DC70_t *)(base + 0x22DC70);
+
         if (!(globals.windowed))
         {
             uint8_t hideCursorPatch = 0x01;
             WriteMemory((void *)(base + 0x5CA253), &hideCursorPatch, sizeof(hideCursorPatch)); // Hide Cursor When Fullscreen
         }
 
-        _Reset = (HRESULT(APIENTRY *)(IDirect3DDevice9 *, D3DPRESENT_PARAMETERS *))((uint32_t)GetModuleHandleW(L"d3d9.dll") + 0xE45A0);
-
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
+        DetourAttach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
         DetourAttach(&(PVOID &)_RegQueryValueExA, HookedRegQueryValueExA);
         DetourAttach(&(PVOID &)_RegSetValueExA, HookedRegSetValueExA);
-        DetourAttach(&(PVOID &)_Reset, HookedReset);
-        DetourAttach(&(PVOID &)_GetSystemMetrics, HookedGetSystemMetrics);
+        if (!(globals.windowed))
+        {
+            DetourAttach(&(PVOID &)_GetSystemMetrics, HookedGetSystemMetrics);
+        }
+        DetourAttach(&(PVOID &)_AspectRatio, HookedAspectRatio);
         DetourTransactionCommit();
         break;
     }
