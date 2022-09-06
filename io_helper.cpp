@@ -22,3 +22,12 @@ bool file_exists(std::filesystem::path path)
 {
     return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
 }
+
+std::filesystem::path get_module_path(HMODULE hModule)
+{
+    std::wstring module;
+    module.reserve(MAX_PATH);
+    if (!(GetModuleFileNameW(hModule, module.data(), module.capacity())))
+        ;
+    return std::filesystem::path(module.c_str());
+}
