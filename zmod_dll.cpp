@@ -11,8 +11,14 @@ struct
     std::filesystem::path modulePath;
 } globals;
 
-HWND(WINAPI *_CreateWindowExA)
-(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam) = CreateWindowExA;
+typedef HWND(WINAPI CreateWindowExA_t)(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
+typedef HWND(WINAPI CreateWindowExW_t)(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam);
+
+CreateWindowExA_t *_CreateWindowExA = CreateWindowExA;
+CreateWindowExW_t *_CreateWindowExW = CreateWindowExW;
+
+CreateWindowExA_t HookedCreateWindowExA;
+CreateWindowExW_t HookedCreateWindowExW;
 
 extern "C"
 {
@@ -66,6 +72,19 @@ HWND WINAPI HookedCreateWindowExA(DWORD dwExStyle, LPCSTR lpClassName, LPCSTR lp
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
     DetourDetach(&(PVOID &)_CreateWindowExA, HookedCreateWindowExA);
+    DetourDetach(&(PVOID &)_CreateWindowExW, HookedCreateWindowExW);
+    DetourTransactionCommit();
+    load_dlls();
+    return ret;
+}
+
+HWND WINAPI HookedCreateWindowExW(DWORD dwExStyle, LPCWSTR lpClassName, LPCWSTR lpWindowName, DWORD dwStyle, int X, int Y, int nWidth, int nHeight, HWND hWndParent, HMENU hMenu, HINSTANCE hInstance, LPVOID lpParam)
+{
+    auto ret = _CreateWindowExW(dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+    DetourDetach(&(PVOID &)_CreateWindowExA, HookedCreateWindowExA);
+    DetourDetach(&(PVOID &)_CreateWindowExW, HookedCreateWindowExW);
     DetourTransactionCommit();
     load_dlls();
     return ret;
@@ -90,6 +109,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
         DetourAttach(&(PVOID &)_CreateWindowExA, HookedCreateWindowExA);
+        DetourAttach(&(PVOID &)_CreateWindowExW, HookedCreateWindowExW);
         DetourTransactionCommit();
         break;
     case DLL_PROCESS_DETACH:
