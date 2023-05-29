@@ -1,0 +1,1 @@
+cl.exe /EHsc /nologo /LD /O2 /I include /std:c++20 zmod_dw8xlce_frame_time.cpp /link winmm.lib lib.X86/detours.lib

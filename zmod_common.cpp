@@ -115,7 +115,14 @@ namespace zmod
         std::vector<uint8_t> bytes;
         while (iss >> s)
         {
-            bytes.push_back((uint8_t)std::stoul(s, nullptr, 16));
+            if (s == "??")
+            {
+                bytes.push_back(0);
+            }
+            else
+            {
+                bytes.push_back((uint8_t)std::stoul(s, nullptr, 16));
+            }
         }
         return bytes;
     }
@@ -171,6 +178,15 @@ namespace zmod
     {
         auto base = zmod::get_base_address(nullptr);
         auto [bytes, mask] = parse_hex_mask(pattern);
+        return find_pattern(base, 0x1000000, bytes, mask);
+    }
+
+    const uint8_t *find_wstring(const std::wstring &str)
+    {
+        auto base = zmod::get_base_address(nullptr);
+        auto bytes = std::vector<uint8_t>(str.length() * sizeof(wchar_t));
+        std::memcpy(bytes.data(), str.data(), bytes.size());
+        auto mask = std::string(bytes.size(), 'x');
         return find_pattern(base, 0x1000000, bytes, mask);
     }
 }
