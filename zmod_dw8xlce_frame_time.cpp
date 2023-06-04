@@ -422,6 +422,9 @@ void module_main(HINSTANCE instance)
         {
             zmod::write_memory((void *)(base + address), fld.data(), fld.size());
         }
+
+        auto cutscene_speed_fix_address = zmod::find_pattern("D9 EE B8 1E") + 19;
+        zmod::write_memory((void *)cutscene_speed_fix_address, fld.data(), fld.size());
     }
 }
 
