@@ -16,15 +16,27 @@ typedef void(__stdcall function_554050_t)();
 function_554050_t timer_update_hook;
 function_554050_t *_timer_update;
 
-typedef int(__stdcall function_583320_t)();
-function_583320_t hud_state_update_hook;
-function_583320_t *_hud_state_update;
+typedef void(__stdcall function_4F03A0_t)(int a);
+function_4F03A0_t hud_map_update_hook;
+function_4F03A0_t *_hud_map_update;
+
+typedef void(__stdcall function_50E5D0_t)();
+function_50E5D0_t hud_dialogue_update_hook;
+function_50E5D0_t *_hud_dialogue_update;
+
+typedef void(__stdcall function_4EFF50_t)();
+function_4EFF50_t hud_message_update_hook;
+function_4EFF50_t *_hud_message_update;
+
+typedef void(__stdcall function_524CD0_t)();
+function_524CD0_t hud_player_update_hook;
+function_524CD0_t *_hud_player_update;
 
 std::vector<uintptr_t> fild_vsync_en = {
     0x0022D155,
     0x00233E9B,
     0x0023B30F,
-    0x00255316,
+    // 0x00255316,
     0x002553D7,
     0x00255416,
     0x0030BB53,
@@ -92,7 +104,7 @@ std::vector<uintptr_t> fild_vsync_zh = {
     0x0022D775,
     0x002344BB,
     0x0023B92F,
-    0x00255946,
+    // 0x00255946,
     0x00255A07,
     0x00255A46,
     0x002F3EB3,
@@ -160,7 +172,7 @@ std::vector<uintptr_t> fild_vsync_jp = {
     0x0022D505,
     0x0023424B,
     0x0023B6CF,
-    0x00255706,
+    // 0x00255706,
     0x002557C7,
     0x00255806,
     0x0030A1E3,
@@ -288,13 +300,48 @@ void __stdcall timer_update_hook()
     }
 }
 
-int __stdcall hud_state_update_hook()
+void __stdcall hud_map_update_hook(int a)
 {
     if (!(*globals.frame_counter % globals.fps_multiplier))
     {
-        return _hud_state_update();
+        _hud_map_update(a);
     }
-    return 0;
+}
+
+void __stdcall hud_dialogue_update_hook()
+{
+    __asm push eax;
+    if (!(*globals.frame_counter % globals.fps_multiplier))
+    {
+        __asm pop eax;
+        _hud_dialogue_update();
+    }
+    else
+    {
+        __asm pop eax;
+    }
+}
+
+void __stdcall hud_message_update_hook()
+{
+    __asm push eax;
+    if (!(*globals.frame_counter % globals.fps_multiplier))
+    {
+        __asm pop eax;
+        _hud_message_update();
+    }
+    else
+    {
+        __asm pop eax;
+    }
+}
+
+void __stdcall hud_player_update_hook()
+{
+    if (!(*globals.frame_counter % globals.fps_multiplier))
+    {
+        _hud_player_update();
+    }
 }
 
 intptr_t calculate_relative_offset(void *next_instruction, void *target)
@@ -373,11 +420,18 @@ void module_main(HINSTANCE instance)
     globals.frame_counter = *(int32_t **)(zmod::find_pattern("8B 1D ?? ?? ?? ?? B8 67") + 2);
 
     _timer_update = (function_554050_t *)(zmod::find_pattern("68 04 00 80 03 E8") - 10);
-    _hud_state_update = (function_583320_t *)(zmod::find_pattern("55 56 57 33 DB 53") - 10);
+    _hud_map_update = (function_4F03A0_t *)(zmod::find_pattern("8B A8 78") - 12);
+    _hud_dialogue_update = (function_50E5D0_t *)(zmod::find_pattern("8B 48 08 85 C9 74 6E"));
+    _hud_message_update = (function_4EFF50_t *)(zmod::find_pattern("8B 48 08 85 C9 74 52 8B 15"));
+    _hud_player_update = (function_524CD0_t *)(zmod::find_pattern("D9 EE 83 EC 08 53 8B"));
+
     DetourTransactionBegin();
     DetourUpdateThread(GetCurrentThread());
     DetourAttach(&(PVOID &)_timer_update, timer_update_hook);
-    DetourAttach(&(PVOID &)_hud_state_update, hud_state_update_hook);
+    DetourAttach(&(PVOID &)_hud_map_update, hud_map_update_hook);
+    DetourAttach(&(PVOID &)_hud_dialogue_update, hud_dialogue_update_hook);
+    DetourAttach(&(PVOID &)_hud_message_update, hud_message_update_hook);
+    DetourAttach(&(PVOID &)_hud_player_update, hud_player_update_hook);
     DetourTransactionCommit();
 
     {
