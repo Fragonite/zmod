@@ -32,6 +32,14 @@ typedef void(__stdcall function_524CD0_t)();
 function_524CD0_t hud_player_update_hook;
 function_524CD0_t *_hud_player_update;
 
+typedef LSTATUS(WINAPI RegQueryValueExA_t)(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
+RegQueryValueExA_t RegQueryValueExA_hook;
+RegQueryValueExA_t *RegQueryValueExA_orig = RegQueryValueExA;
+
+typedef LSTATUS(WINAPI RegSetValueExA_t)(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData);
+RegSetValueExA_t RegSetValueExA_hook;
+RegSetValueExA_t *RegSetValueExA_orig = RegSetValueExA;
+
 std::vector<uintptr_t> fild_vsync_en = {
     0x0022D155,
     0x00233E9B,
@@ -245,8 +253,39 @@ struct
     int32_t fps_target;
     int32_t fps_multiplier;
     int32_t *frame_counter;
+    bool vsync;
     zmod::ini_map ini;
 } globals;
+
+bool should_tick()
+{
+    auto t = globals.fps_target;
+    if (t >= 120)
+    {
+        if (!(*globals.frame_counter % globals.fps_multiplier))
+        {
+            return true;
+        }
+    }
+    else if (t >= 90)
+    {
+        if (*globals.frame_counter % 3)
+        {
+            return true;
+        }
+    }
+    else
+    {
+        return true;
+    }
+    return false;
+}
+
+void insert_relative_address(void *dst, void *next_instruction, void *target)
+{
+    auto relative_address = (intptr_t)target - (intptr_t)next_instruction;
+    memcpy(dst, &relative_address, sizeof(relative_address));
+}
 
 void __stdcall game_wait_hook(LARGE_INTEGER *lpPerformanceCount, uint32_t vsync_30)
 {
@@ -279,22 +318,7 @@ void __stdcall game_wait_hook(LARGE_INTEGER *lpPerformanceCount, uint32_t vsync_
 
 void __stdcall timer_update_hook()
 {
-    auto t = globals.fps_target;
-    if (t >= 120)
-    {
-        if (!(*globals.frame_counter % globals.fps_multiplier))
-        {
-            _timer_update();
-        }
-    }
-    else if (t >= 90)
-    {
-        if (*globals.frame_counter % 3)
-        {
-            _timer_update();
-        }
-    }
-    else
+    if (should_tick())
     {
         _timer_update();
     }
@@ -302,7 +326,7 @@ void __stdcall timer_update_hook()
 
 void __stdcall hud_map_update_hook(int a)
 {
-    if (!(*globals.frame_counter % globals.fps_multiplier))
+    if (should_tick())
     {
         _hud_map_update(a);
     }
@@ -311,7 +335,7 @@ void __stdcall hud_map_update_hook(int a)
 void __stdcall hud_dialogue_update_hook()
 {
     __asm push eax;
-    if (!(*globals.frame_counter % globals.fps_multiplier))
+    if (should_tick())
     {
         __asm pop eax;
         _hud_dialogue_update();
@@ -325,7 +349,7 @@ void __stdcall hud_dialogue_update_hook()
 void __stdcall hud_message_update_hook()
 {
     __asm push eax;
-    if (!(*globals.frame_counter % globals.fps_multiplier))
+    if (should_tick())
     {
         __asm pop eax;
         _hud_message_update();
@@ -338,10 +362,46 @@ void __stdcall hud_message_update_hook()
 
 void __stdcall hud_player_update_hook()
 {
-    if (!(*globals.frame_counter % globals.fps_multiplier))
+    if (should_tick())
     {
         _hud_player_update();
     }
+}
+
+void should_tick_to_ecx()
+{
+    __asm push eax;
+    if (should_tick())
+    {
+        __asm mov ecx, 1;
+    }
+    else
+    {
+        __asm mov ecx, 0;
+    }
+    __asm pop eax;
+}
+
+LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
+{
+    auto rv = RegQueryValueExA_orig(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
+    if (rv == ERROR_SUCCESS)
+    {
+        if (std::string(lpValueName) == "Vsync")
+        {
+            *(DWORD *)lpData = (globals.vsync) ? 1 : 0;
+        }
+    }
+    return rv;
+}
+
+LSTATUS WINAPI HookedRegSetValueExA(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData)
+{
+    if (std::string(lpValueName) == "Vsync")
+    {
+        return ERROR_SUCCESS;
+    }
+    return RegSetValueExA_orig(hKey, lpValueName, Reserved, dwType, lpData, cbData);
 }
 
 intptr_t calculate_relative_offset(void *next_instruction, void *target)
@@ -383,6 +443,7 @@ void module_main(HINSTANCE instance)
         {{module_key, L"process_priority_class"}, L"0x00000080"},
         {{module_key, L"target_fps"}, L"120.0"},
         {{module_key, L"clock_speed"}, L"1.0"},
+        {{module_key, L"vsync"}, L"0"},
     };
 
     if (!(zmod::file_exists(ini_path)))
@@ -406,6 +467,8 @@ void module_main(HINSTANCE instance)
     globals.dt_target = 1.0 / (target_fps * clock_speed);
     globals.dt_sleep = globals.dt_target - 0.0016; // Sleep if we have greater than 1.6 ms to spare
     globals.dt_multiplier = 60.0 / std::round(target_fps);
+
+    globals.vsync = globals.ini[{module_key, L"vsync"}] == L"1";
 
     set_timer_resolution();
 
@@ -432,6 +495,8 @@ void module_main(HINSTANCE instance)
     DetourAttach(&(PVOID &)_hud_dialogue_update, hud_dialogue_update_hook);
     DetourAttach(&(PVOID &)_hud_message_update, hud_message_update_hook);
     DetourAttach(&(PVOID &)_hud_player_update, hud_player_update_hook);
+    DetourAttach(&(PVOID &)RegQueryValueExA_orig, RegQueryValueExA_hook);
+    DetourAttach(&(PVOID &)RegSetValueExA_orig, RegSetValueExA_hook);
     DetourTransactionCommit();
 
     {
@@ -479,6 +544,14 @@ void module_main(HINSTANCE instance)
 
         auto cutscene_speed_fix_address = zmod::find_pattern("D9 EE B8 1E") + 19;
         zmod::write_memory((void *)cutscene_speed_fix_address, fld.data(), fld.size());
+    }
+
+    {
+        // Fix some hidden background timers from running too fast
+        auto addr = zmod::find_pattern("8D 46 04 BA 04 00 00 00") - 6;
+        auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 90");
+        insert_relative_address(&patch[1], (void *)&addr[5], should_tick_to_ecx);
+        zmod::write_memory((void *)addr, patch.data(), patch.size());
     }
 }
 
