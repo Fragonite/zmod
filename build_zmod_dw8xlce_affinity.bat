@@ -1,0 +1,1 @@
+cl.exe /EHsc /std:c++latest /Zi /Ox /LD /I include zmod_dw8xlce_affinity.cpp
