@@ -1,6 +1,7 @@
 namespace zmod
 {
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
+    using ini = ini_map;
 
     bool file_exists(const std::filesystem::path &path)
     {
