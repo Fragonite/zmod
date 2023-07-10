@@ -371,6 +371,7 @@ void __stdcall hud_player_update_hook()
 void should_tick_to_ecx()
 {
     __asm push eax;
+    __asm push edx;
     if (should_tick())
     {
         __asm mov ecx, 1;
@@ -379,6 +380,7 @@ void should_tick_to_ecx()
     {
         __asm mov ecx, 0;
     }
+    __asm pop edx;
     __asm pop eax;
 }
 
