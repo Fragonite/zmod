@@ -382,7 +382,7 @@ void should_tick_to_ecx()
     __asm pop eax;
 }
 
-LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
+LSTATUS WINAPI RegQueryValueExA_hook(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
 {
     auto rv = RegQueryValueExA_orig(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
     if (rv == ERROR_SUCCESS)
@@ -395,7 +395,7 @@ LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpR
     return rv;
 }
 
-LSTATUS WINAPI HookedRegSetValueExA(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData)
+LSTATUS WINAPI RegSetValueExA_hook(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData)
 {
     if (std::string(lpValueName) == "Vsync")
     {
