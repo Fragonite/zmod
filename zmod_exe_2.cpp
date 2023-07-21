@@ -8,8 +8,8 @@
 std::string get_appid(std::filesystem::path dir)
 {
     std::map<std::wstring, std::string> appids = {
-        {L"steamapps/common/Dynasty Warriors 8", "278080"},
-        {L"steamapps/common/WARRIORS OROCHI 4", "831560"},
+        {L"steamapps\\common\\Dynasty Warriors 8", "278080"},
+        {L"steamapps\\common\\WARRIORS OROCHI 4", "831560"},
     };
 
     auto d = dir.wstring();
@@ -35,13 +35,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
     if (!(zmod::file_exists(dll_32_path)))
     {
-        MessageBoxW(NULL, L"zmod_32.dll not found!", L"zmod", MB_OK);
-        return 0;
+        MessageBoxW(NULL, (std::wstring(L"zmod_32.dll not found: ") + dll_32_path.wstring()).c_str(), L"zmod", MB_OK);
+        return 1;
     }
     if (!(zmod::file_exists(dll_64_path)))
     {
-        MessageBoxW(NULL, L"zmod_64.dll not found!", L"zmod", MB_OK);
-        return 0;
+        MessageBoxW(NULL, (std::wstring(L"zmod_64.dll not found: ") + dll_64_path.wstring()).c_str(), L"zmod", MB_OK);
+        return 1;
     }
 
     if (zmod::file_exists(ini_path))
@@ -57,8 +57,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
 
     if (!(zmod::file_exists(target)))
     {
-        MessageBoxW(NULL, L"Target not found!", L"zmod", MB_OK);
-        return 0;
+        MessageBoxW(NULL, (std::wstring(L"Target not found: ") + target.wstring()).c_str(), L"zmod", MB_OK);
+        return 1;
     }
 
     auto steam_appid = target.parent_path() / L"steam_appid.txt";
@@ -71,6 +71,28 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         }
     }
 
-    MessageBoxW(NULL, L"Hello, World!", L"zmod_exe_2", MB_OK);
+    STARTUPINFOW si{.cb = sizeof(si)};
+    PROCESS_INFORMATION pi{};
+
+    auto result = DetourCreateProcessWithDllExW(
+        target.wstring().c_str(),
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        0,
+        NULL,
+        target.parent_path().wstring().c_str(),
+        &si,
+        &pi,
+        dll_32_path.string().c_str(),
+        NULL);
+
+    if (!(result))
+    {
+        MessageBoxW(NULL, L"Failed to launch target!", L"zmod", MB_OK);
+        return 1;
+    }
+
     return 0;
 }
