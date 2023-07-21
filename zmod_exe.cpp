@@ -1,59 +1,98 @@
-#define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <filesystem>
 #include <map>
-#include "io_helper.cpp"
+#include <filesystem>
+#include <fstream>
 #include "detours.h"
+#include "zmod_common.cpp"
 
-struct
+std::string get_appid(std::filesystem::path dir)
 {
-    ini_map iniMap;
-} static globals;
+    std::map<std::wstring, std::string> appids = {
+        {L"steamapps\\common\\Dynasty Warriors 8", "278080"},
+        {L"steamapps\\common\\WARRIORS OROCHI 4", "831560"},
+    };
+
+    auto d = dir.wstring();
+    for (const auto &[installdir, appid] : appids)
+    {
+        if (d.find(installdir) != std::string::npos)
+        {
+            return appid;
+        }
+    }
+
+    return "";
+}
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
 {
-    std::wstring moduleName;
-    moduleName.reserve(MAX_PATH);
-    if (!(GetModuleFileNameW(nullptr, moduleName.data(), moduleName.capacity())))
-        ;
-    auto modulePath = std::filesystem::path(moduleName.c_str());
-    auto iniPath = modulePath.replace_extension(L".ini");
-    std::wstring moduleKey = modulePath.stem().c_str();
+    zmod::ini ini = {{{L"zmod", L"target"}, L"Launch.exe"}}; // default values
 
-    globals.iniMap = {
-        {{moduleKey, L"target"}, L"Launch.exe"},
-        {{moduleKey, L"dll"}, L"zmod_32.dll"},
-    };
+    auto app_path = zmod::get_module_path(NULL);
+    auto ini_path = app_path.replace_filename(L"zmod.ini");
+    auto dll_32_path = app_path.replace_filename(L"zmod_32.dll");
+    auto dll_64_path = app_path.replace_filename(L"zmod_64.dll");
 
-    if (!(file_exists(iniPath)))
+    if (!(zmod::file_exists(dll_32_path)))
     {
-        create_ini_file(iniPath, globals.iniMap);
+        MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_32_path.wstring()).c_str(), L"zmod", MB_OK);
+        return 1;
     }
-    read_ini_file(iniPath, globals.iniMap);
-
-    auto cwd = std::filesystem::current_path();
-    auto target = cwd / globals.iniMap[{moduleKey, L"target"}];
-    if (!(file_exists(target)))
+    if (!(zmod::file_exists(dll_64_path)))
     {
-        MessageBoxW(nullptr, (std::wstring(L"Failed to find target file: ") + target.wstring()).c_str(), moduleKey.c_str(), MB_OK);
+        MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_64_path.wstring()).c_str(), L"zmod", MB_OK);
         return 1;
     }
 
-    auto dll = target.parent_path() / globals.iniMap[{moduleKey, L"dll"}];
-    if (!(file_exists(dll)))
+    if (zmod::file_exists(ini_path))
     {
-        MessageBoxW(nullptr, (std::wstring(L"Failed to find DLL file: ") + dll.wstring()).c_str(), moduleKey.c_str(), MB_OK);
+        zmod::read_ini_file(ini_path, ini);
+    }
+    else
+    {
+        zmod::write_ini_file(ini_path, ini);
+    }
+
+    auto target = std::filesystem::current_path() / ini[{L"zmod", L"target"}];
+
+    if (!(zmod::file_exists(target)))
+    {
+        MessageBoxW(NULL, (std::wstring(L"Missing file: ") + target.wstring()).c_str(), L"zmod", MB_OK);
         return 1;
     }
 
-    STARTUPINFOW si = {
-        .cb = sizeof(si),
-    };
-    PROCESS_INFORMATION pi;
-    if (!(DetourCreateProcessWithDllExW(target.wstring().c_str(), NULL, NULL, NULL, FALSE, 0, NULL, target.parent_path().wstring().c_str(), &si, &pi, dll.string().c_str(), NULL)))
+    auto steam_appid = target.parent_path() / L"steam_appid.txt";
+    if (!(zmod::file_exists(steam_appid)))
     {
-        MessageBoxW(nullptr, (std::wstring(L"Failed to create process: ") + target.wstring()).c_str(), moduleKey.c_str(), MB_OK);
+        auto appid = get_appid(target.parent_path());
+        if (!(appid.empty()))
+        {
+            std::ofstream(steam_appid) << appid;
+        }
+    }
+
+    STARTUPINFOW si{.cb = sizeof(si)};
+    PROCESS_INFORMATION pi{};
+
+    auto result = DetourCreateProcessWithDllExW(
+        target.wstring().c_str(),
+        NULL,
+        NULL,
+        NULL,
+        FALSE,
+        0,
+        NULL,
+        target.parent_path().wstring().c_str(),
+        &si,
+        &pi,
+        dll_32_path.string().c_str(),
+        NULL);
+
+    if (!(result))
+    {
+        MessageBoxW(NULL, L"Failed to launch target!", L"zmod", MB_OK);
         return 1;
     }
+
     return 0;
 }
