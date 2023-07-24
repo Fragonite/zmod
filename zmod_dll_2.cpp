@@ -34,6 +34,7 @@ typedef HWND(WINAPI CreateWindowExW_t)(
 
 CreateWindowExA_t CreateWindowExA_hook;
 CreateWindowExW_t CreateWindowExW_hook;
+void load_dlls();
 
 CreateWindowExA_t *CreateWindowExA_orig = CreateWindowExA;
 CreateWindowExW_t *CreateWindowExW_orig = CreateWindowExW;

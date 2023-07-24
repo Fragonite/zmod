@@ -1,0 +1,1 @@
+cl.exe /EHsc /std:c++latest /Ox /LD /I include zmod_dll_2.cpp /link lib.X64/detours.lib user32.lib /def:zmod_64.def /out:zmod_64.dll
