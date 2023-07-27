@@ -170,7 +170,7 @@ namespace zmod
         return find_pattern(start, size, bytes, mask);
     }
 
-    uint8_t *get_base_address(wchar_t *module_name)
+    uint8_t *get_base_address(const wchar_t *module_name)
     {
         return (uint8_t *)GetModuleHandleW(module_name);
     }
