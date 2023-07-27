@@ -164,7 +164,7 @@ namespace zmod
         return {bytes, mask};
     }
 
-    const uint8_t *find_pattern_ex(const uint8_t *start, size_t size, const std::string &pattern)
+    const uint8_t *find_pattern(const uint8_t *start, size_t size, const std::string &pattern)
     {
         auto [bytes, mask] = parse_hex_mask(pattern);
         return find_pattern(start, size, bytes, mask);
