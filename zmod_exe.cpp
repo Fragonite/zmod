@@ -33,15 +33,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
     auto dll_32_path = app_path.replace_filename(L"zmod_32.dll");
     auto dll_64_path = app_path.replace_filename(L"zmod_64.dll");
 
+    auto dll_default = dll_32_path;
+
     if (!(zmod::file_exists(dll_32_path)))
     {
-        MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_32_path.wstring()).c_str(), L"zmod", MB_OK);
-        return 1;
-    }
-    if (!(zmod::file_exists(dll_64_path)))
-    {
-        MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_64_path.wstring()).c_str(), L"zmod", MB_OK);
-        return 1;
+        dll_default = dll_64_path;
+        if (!(zmod::file_exists(dll_64_path)))
+        {
+            MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_32_path.wstring()).c_str(), L"zmod", MB_OK);
+            MessageBoxW(NULL, (std::wstring(L"Missing file: ") + dll_64_path.wstring()).c_str(), L"zmod", MB_OK);
+            return 1;
+        }
     }
 
     if (zmod::file_exists(ini_path))
@@ -85,7 +87,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine
         target.parent_path().wstring().c_str(),
         &si,
         &pi,
-        dll_32_path.string().c_str(),
+        dll_default.string().c_str(),
         NULL);
 
     if (!(result))
