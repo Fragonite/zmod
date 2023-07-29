@@ -10,7 +10,7 @@ fn_21BE00_t initialise_map_hook; // Hook the function that sets the game difficu
 fn_21BE00_t *initialise_map_orig = nullptr;
 struct
 {
-    void ***game_vtable = nullptr;
+    void ****game_vtable = nullptr;
     void **game_info = nullptr;
 } globals;
 
@@ -43,8 +43,8 @@ uint32_t calculate_new_map_difficulty()
         OFFICER_LEVEL = 0x378,
     };
 
-    auto vt = globals.game_vtable;
-    auto party_ids = (uint16_t *)(*(uint8_t **)globals.game_info + 0xF70);
+    auto vt = *globals.game_vtable;
+    auto party_ids = (uint16_t *)(&(*(uint8_t **)globals.game_info)[0xF70]);
     double first, second, third;
 
     auto officer = get_officer_data(vt, party_ids[0]);
@@ -97,8 +97,8 @@ void module_main(HINSTANCE hinstDLL)
     if (ini[{L"zmod_wo4u_difficulty", L"scale_sorties_to_party_level"}] != L"0")
     {
         auto wo4u = zmod::get_base_address(L"WO4U.dll");
-        globals.game_vtable = *(void ****)(wo4u + 0xF441C0);
-        globals.game_info = *(void ***)(wo4u + 0xF441E8);
+        globals.game_vtable = (void ****)(wo4u + 0xF441C0);
+        globals.game_info = (void **)(wo4u + 0xF441E8);
 
         auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "41 0F BE 87 EE 04 00 00");
         auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 44 8B E0");
