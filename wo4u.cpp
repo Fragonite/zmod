@@ -17,11 +17,12 @@ void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t a3, uint
 void module_main(HINSTANCE hinstDLL)
 {
     zmod::ini ini = {
-        {{L"difficulty", L"perpetual_pandemonium"}, L"0"},
-        {{L"difficulty", L"scale_sorties_to_party_level"}, L"0"}};
+        {{L"zmod_wo4u_difficulty", L"perpetual_pandemonium"}, L"0"},
+        {{L"zmod_wo4u_difficulty", L"scale_sorties_to_party_level"}, L"0"},
+    };
 
     auto module_path = zmod::get_module_path(hinstDLL);
-    auto ini_path = module_path.replace_filename(L"wo4u.ini");
+    auto ini_path = module_path.replace_filename(L"zmod_wo4u_difficulty.ini");
 
     if (zmod::file_exists(ini_path))
     {
@@ -49,6 +50,10 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
     case DLL_PROCESS_ATTACH:
         if (!(DisableThreadLibraryCalls(hinstDLL)))
             ;
+        if (zmod::get_module_path(NULL).filename().wstring().find(L"WO4.exe") == std::wstring::npos)
+        {
+            return FALSE;
+        }
         break;
     }
     return TRUE;

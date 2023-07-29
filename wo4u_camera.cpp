@@ -19,7 +19,8 @@ struct camera
 
 void module_main(HINSTANCE hinstDLL)
 {
-    // 150.0 is already optimal for height and other values cause problems when jumping
+    // 150.0 is already optimal for camera height and other values cause problems when jumping
+    // All values are default/from the game
     zmod::ini ini = {
         {{L"zmod_wo4u_camera", L"min_distance"}, L"510.0"},
         {{L"zmod_wo4u_camera", L"max_distance"}, L"560.0"},
