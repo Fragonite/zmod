@@ -86,7 +86,8 @@ void module_main(HINSTANCE hinstDLL)
 
     if (ini[{L"zmod_wo4u_difficulty", L"perpetual_pandemonium"}] != L"0")
     {
-        initialise_map_orig = (fn_21BE00_t *)(zmod::find_pattern("45 33 ED 81 F9 2B 01 00 00") - 0x3F);
+        auto wo4u = zmod::get_base_address(L"WO4U.dll");
+        initialise_map_orig = (fn_21BE00_t *)(zmod::find_pattern(wo4u, 0xFFFFFF, "45 33 ED 81 F9 2B 01 00 00") - 0x3F);
         DetourTransactionBegin();
         DetourUpdateThread(GetCurrentThread());
         DetourAttach(&(PVOID &)initialise_map_orig, initialise_map_hook);
@@ -95,7 +96,7 @@ void module_main(HINSTANCE hinstDLL)
 
     if (ini[{L"zmod_wo4u_difficulty", L"scale_sorties_to_party_level"}] != L"0")
     {
-        auto wo4u = zmod::get_base_address(NULL);
+        auto wo4u = zmod::get_base_address(L"WO4U.dll");
         globals.game_vtable = *(void ****)(wo4u + 0xF441C0);
         globals.game_info = *(void ***)(wo4u + 0xF441E8);
 
