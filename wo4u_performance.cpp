@@ -1,7 +1,7 @@
+#define NOMINMAX
 #include <Windows.h>
 #include <map>
 #include <filesystem>
-#include "detours.h"
 #include "zmod_common.cpp"
 
 typedef void(fn_7024D0_t)(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30);
@@ -12,16 +12,18 @@ struct
     double dt_target;
     double dt_sleep;
     double frequency;
+    double late_frame_compensation_multiplier;
 } globals;
 
 void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
 {
     auto dt_target = globals.dt_target;
     auto dt_sleep = globals.dt_sleep;
+    auto lfcm = globals.late_frame_compensation_multiplier;
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     auto dt = (double)(now.QuadPart - lpPerformanceCount->QuadPart) / globals.frequency;
-    if (dt < dt_target)
+    if (dt < dt_target * lfcm)
     {
         while (dt < dt_sleep)
         {
@@ -36,43 +38,23 @@ void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
         }
         lpPerformanceCount->QuadPart = lpPerformanceCount->QuadPart + (LONGLONG)(dt_target * globals.frequency); // Prevent drift
     }
-    else if (dt < dt_target * 2.0)
-    {
-        lpPerformanceCount->QuadPart = lpPerformanceCount->QuadPart + (LONGLONG)(dt_target * globals.frequency); // Catch up if less than 2 frames behind
-    }
     else
     {
-        lpPerformanceCount->QuadPart = now.QuadPart; // Else prevent the game from speeding up
+        lpPerformanceCount->QuadPart = now.QuadPart; // Prevent the game from speeding up if dt >= dt_target * lfcm
     }
 }
 
-void set_timer_resolution()
+void insert_relative_address(void *dst, void *next_instruction, void *absolute)
 {
-    timeBeginPeriod(1);
-
-    typedef NTSTATUS(CALLBACK * NtQueryTimerResolution_t)(
-        OUT PULONG MaximumResolution,
-        OUT PULONG MinimumResolution,
-        OUT PULONG CurrentResolution);
-
-    typedef NTSTATUS(CALLBACK * NtSetTimerResolution_t)(
-        IN ULONG DesiredResolution,
-        IN BOOLEAN SetResolution,
-        OUT PULONG CurrentResolution);
-
-    auto hModule = LoadLibraryA("ntdll.dll");
-    NtQueryTimerResolution_t NtQueryTimerResolution = (NtQueryTimerResolution_t)GetProcAddress(hModule, "NtQueryTimerResolution");
-    NtSetTimerResolution_t NtSetTimerResolution = (NtSetTimerResolution_t)GetProcAddress(hModule, "NtSetTimerResolution");
-
-    ULONG MaximumResolution, MinimumResolution, CurrentResolution;
-    NtQueryTimerResolution(&MaximumResolution, &MinimumResolution, &CurrentResolution);
-    NtSetTimerResolution(MinimumResolution, TRUE, &CurrentResolution);
+    auto relative = (intptr_t)absolute - (intptr_t)next_instruction;
+    std::memcpy(dst, &relative, 4);
 }
 
 void module_main(HINSTANCE hinstDLL)
 {
     zmod::ini ini = {
-        {{L"zmod_wo4u_performance", L"clock_speed"}, L"1.0"},
+        {{L"zmod_wo4u_performance", L"global_speed_multiplier"}, L"1.0"},
+        {{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}, L"1.0"},
     };
 
     auto ini_path = zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u_performance.ini");
@@ -85,7 +67,7 @@ void module_main(HINSTANCE hinstDLL)
         zmod::write_ini_file(ini_path, ini);
     }
 
-    auto dt_target = 1.0 / 60.0 * std::wcstod(ini[{L"zmod_wo4u_performance", L"clock_speed"}].c_str(), nullptr);
+    auto dt_target = 1.0 / (60.0 * std::wcstod(ini[{L"zmod_wo4u_performance", L"global_speed_multiplier"}].c_str(), nullptr));
     globals.dt_target = dt_target;
     globals.dt_sleep = dt_target - 0.0016;
 
@@ -93,6 +75,14 @@ void module_main(HINSTANCE hinstDLL)
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
     globals.frequency = (double)frequency.QuadPart;
+
+    globals.late_frame_compensation_multiplier = std::min(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
+    auto patch = zmod::parse_hex("E8 ?? ?? ?? ??");
+    insert_relative_address(&patch[1], (void *)&addr[5], wait_loop);
+    zmod::write_memory((void *)addr, patch.data(), patch.size());
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)
