@@ -45,7 +45,7 @@ void module_main(HINSTANCE hinstDLL)
 
     cam->min_distance = std::wcstof(ini[{L"zmod_wo4u_camera", L"min_distance"}].c_str(), nullptr);
     cam->max_distance = std::wcstof(ini[{L"zmod_wo4u_camera", L"max_distance"}].c_str(), nullptr);
-    cam->height = std::wcstof(ini[{L"zmod_wo4u_camera", L"height"}].c_str(), nullptr);
+    // cam->height = std::wcstof(ini[{L"zmod_wo4u_camera", L"height"}].c_str(), nullptr);
     cam->angle = (-(std::wcstof(ini[{L"zmod_wo4u_camera", L"angle"}].c_str(), nullptr))) * (std::numbers::pi / 180.0);
 }
 
