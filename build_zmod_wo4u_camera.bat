@@ -1,1 +1,1 @@
-cl.exe /EHsc /std:c++latest /Ox /LD /I include wo4u_camera.cpp /link /out:zmod_wo4u_camera.dll
+cl.exe /EHsc /std:c++latest /Ox /LD /I include wo4u_camera.cpp /link winmm.lib /out:zmod_wo4u_camera.dll

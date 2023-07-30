@@ -12,6 +12,7 @@ struct
 {
     void ****game_vtable = nullptr;
     void **game_info = nullptr;
+    double party_level_multiplier;
 } globals;
 
 void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t a3, uint32_t a4, uint8_t a5)
@@ -45,6 +46,7 @@ uint32_t calculate_new_map_difficulty()
 
     auto vt = *globals.game_vtable;
     auto party_ids = (uint16_t *)(&(*(uint8_t **)globals.game_info)[0xF70]);
+    auto party_level_multiplier = globals.party_level_multiplier;
     double first, second, third;
 
     auto officer = get_officer_data(vt, party_ids[0]);
@@ -56,7 +58,7 @@ uint32_t calculate_new_map_difficulty()
     officer = get_officer_data(vt, party_ids[2]);
     third = (officer[OFFICER_PROMOTION]) ? 99.0 : (double)officer[OFFICER_LEVEL];
 
-    return std::round((first + second + third) / 3.0);
+    return std::round((first + second + third) * party_level_multiplier / 3.0);
 }
 
 void insert_relative_address(void *dst, void *next_instruction, void *absolute)
@@ -70,6 +72,7 @@ void module_main(HINSTANCE hinstDLL)
     zmod::ini ini = {
         {{L"zmod_wo4u_difficulty", L"perpetual_pandemonium"}, L"0"},
         {{L"zmod_wo4u_difficulty", L"scale_sorties_to_party_level"}, L"0"},
+        {{L"zmod_wo4u_difficulty", L"party_level_multiplier"}, L"1.0"},
     };
 
     auto module_path = zmod::get_module_path(hinstDLL);
@@ -99,6 +102,7 @@ void module_main(HINSTANCE hinstDLL)
         auto wo4u = zmod::get_base_address(L"WO4U.dll");
         globals.game_vtable = (void ****)(wo4u + 0xF441C0);
         globals.game_info = (void **)(wo4u + 0xF441E8);
+        globals.party_level_multiplier = std::wcstod(ini[{L"zmod_wo4u_difficulty", L"party_level_multiplier"}].c_str(), nullptr);
 
         auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "41 0F BE 87 EE 04 00 00");
         auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 44 8B E0");
