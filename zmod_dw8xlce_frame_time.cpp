@@ -412,29 +412,6 @@ intptr_t calculate_relative_offset(void *next_instruction, void *target)
     return offset;
 }
 
-void set_timer_resolution()
-{
-    timeBeginPeriod(1);
-
-    typedef NTSTATUS(CALLBACK * NtSetTimerResolution_t)(
-        IN ULONG DesiredResolution,
-        IN BOOLEAN SetResolution,
-        OUT PULONG CurrentResolution);
-
-    typedef NTSTATUS(CALLBACK * NtQueryTimerResolution_t)(
-        OUT PULONG MaximumResolution,
-        OUT PULONG MinimumResolution,
-        OUT PULONG CurrentResolution);
-
-    HMODULE hModule = LoadLibraryA("ntdll.dll");
-    NtQueryTimerResolution_t NtQueryTimerResolution = (NtQueryTimerResolution_t)GetProcAddress(hModule, "NtQueryTimerResolution");
-    NtSetTimerResolution_t NtSetTimerResolution = (NtSetTimerResolution_t)GetProcAddress(hModule, "NtSetTimerResolution");
-
-    ULONG MaximumResolution, MinimumResolution, CurrentResolution;
-    NtQueryTimerResolution(&MaximumResolution, &MinimumResolution, &CurrentResolution);
-    NtSetTimerResolution(MinimumResolution, TRUE, &CurrentResolution);
-}
-
 void module_main(HINSTANCE instance)
 {
     auto module_path = zmod::get_module_path(instance);
@@ -472,7 +449,7 @@ void module_main(HINSTANCE instance)
 
     globals.vsync = globals.ini[{module_key, L"vsync"}] == L"1";
 
-    set_timer_resolution();
+    zmod::set_timer_resolution();
 
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);

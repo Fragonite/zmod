@@ -190,4 +190,27 @@ namespace zmod
         auto mask = std::string(bytes.size(), 'x');
         return find_pattern(base, 0x1000000, bytes, mask);
     }
+
+    void set_timer_resolution()
+    {
+        timeBeginPeriod(1);
+
+        typedef NTSTATUS(CALLBACK * NtQueryTimerResolution_t)(
+            OUT PULONG MaximumResolution,
+            OUT PULONG MinimumResolution,
+            OUT PULONG CurrentResolution);
+
+        typedef NTSTATUS(CALLBACK * NtSetTimerResolution_t)(
+            IN ULONG DesiredResolution,
+            IN BOOLEAN SetResolution,
+            OUT PULONG CurrentResolution);
+
+        auto hModule = LoadLibraryA("ntdll.dll");
+        NtQueryTimerResolution_t NtQueryTimerResolution = (NtQueryTimerResolution_t)GetProcAddress(hModule, "NtQueryTimerResolution");
+        NtSetTimerResolution_t NtSetTimerResolution = (NtSetTimerResolution_t)GetProcAddress(hModule, "NtSetTimerResolution");
+
+        ULONG MaximumResolution, MinimumResolution, CurrentResolution;
+        NtQueryTimerResolution(&MaximumResolution, &MinimumResolution, &CurrentResolution);
+        NtSetTimerResolution(MinimumResolution, TRUE, &CurrentResolution);
+    }
 }
