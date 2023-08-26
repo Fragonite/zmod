@@ -1,7 +1,9 @@
 #define NOMINMAX
+#define WINMM
 #include <Windows.h>
 #include <map>
 #include <filesystem>
+#include <stack>
 #include "zmod_common.cpp"
 
 typedef void(fn_7024D0_t)(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30);
@@ -76,7 +78,7 @@ void module_main(HINSTANCE hinstDLL)
     QueryPerformanceFrequency(&frequency);
     globals.frequency = (double)frequency.QuadPart;
 
-    globals.late_frame_compensation_multiplier = std::min(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
+    globals.late_frame_compensation_multiplier = std::max(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
 
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
