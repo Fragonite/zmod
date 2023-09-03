@@ -191,6 +191,8 @@ namespace zmod
         return find_pattern(base, 0x1000000, bytes, mask);
     }
 
+    #ifdef WINMM
+
     void set_timer_resolution()
     {
         timeBeginPeriod(1);
@@ -213,4 +215,6 @@ namespace zmod
         NtQueryTimerResolution(&MaximumResolution, &MinimumResolution, &CurrentResolution);
         NtSetTimerResolution(MinimumResolution, TRUE, &CurrentResolution);
     }
+
+    #endif
 }

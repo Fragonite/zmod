@@ -1,5 +1,6 @@
 // #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#define WINMM
 #include <windows.h>
 #include <string>
 #include <filesystem>
