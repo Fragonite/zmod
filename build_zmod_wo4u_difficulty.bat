@@ -1,1 +1,0 @@
-cl.exe /EHsc /std:c++latest /Ox /LD /I include wo4u_difficulty.cpp /link lib.X64/detours.lib winmm.lib /out:zmod_wo4u_difficulty.dll

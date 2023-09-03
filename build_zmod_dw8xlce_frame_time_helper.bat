@@ -1,1 +1,0 @@
-cl.exe /Zi /EHsc /nologo /O2 /I include /std:c++20 zmod_dw8xlce_frame_time_helper.cpp

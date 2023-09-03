@@ -1,1 +1,0 @@
-cl.exe /EHsc /nologo /LD /O2 /I include /std:c++20 zmod_dw8xlce_ultrawide.cpp /link lib.X86/detours.lib advapi32.lib user32.lib
