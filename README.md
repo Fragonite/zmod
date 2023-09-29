@@ -1,5 +1,6 @@
-[![Discord Banner 1](https://discordapp.com/api/guilds/1013799851680596099/widget.png?style=banner1)](https://discord.gg/ACMfwHZhPA)
 # zmod
+[![Discord](https://discordapp.com/api/guilds/1013799851680596099/widget.png?style=shield)](https://discord.gg/ACMfwHZhPA)
+
 Basic modding framework for DW8XLCE.  
 Includes support for the following:
 
