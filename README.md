@@ -9,6 +9,7 @@ Includes support for the following:
 - 120 FPS
 - Improved frame timing
 - Custom camera distance, height, and angle
+- Disable the weapon affinity system or make officers with an advantage flinch
 - English, Traditional Chinese, Simplified Chinese, and Japanese language support
 
 It is recommended to set the FPS limit in Nvidia Control Panel to your target FPS. This will make the gameplay much smoother, even at 60 Hz.
