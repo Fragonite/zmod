@@ -5,9 +5,9 @@ cl.exe ^
 /Ox ^
 /LD ^
 /I ../include ^
-/Fe./x64_artifacts/dinput8 ^
-/Fo./x64_artifacts/dinput8 ^
-../zmod_dll.cpp ^
-/link ../lib.X64/detours.lib user32.lib winmm.lib
+/Fe./x64_artifacts/zmod_speedhack ^
+/Fo./x64_artifacts/zmod_speedhack ^
+../speedhack.cpp ^
+/link ../lib.X64/detours.lib winmm.lib
 move /Y .\x64_artifacts\*.dll .\x64_release
 move /Y .\x64_artifacts\*.exe .\x64_release
