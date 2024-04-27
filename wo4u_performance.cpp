@@ -15,6 +15,7 @@ struct
     double dt_sleep;
     double frequency;
     double late_frame_compensation_multiplier;
+    double target_fps;
 } globals;
 
 void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
@@ -52,24 +53,88 @@ void insert_relative_address(void *dst, void *next_instruction, void *absolute)
     std::memcpy(dst, &relative, 4);
 }
 
-int32_t rel(const uint8_t *next_instruction, const uint8_t *absolute)
+template <typename T, typename U>
+int32_t rel(T *next_instruction, U *absolute)
 {
     return (int32_t)((intptr_t)absolute - (intptr_t)next_instruction);
+}
+
+template <typename T, typename U>
+void setup_jmp(T *pounce, U *splat)
+{
+    auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(pounce + 5, splat));
+    zmod::write_memory(pounce, jmp.data(), jmp.size());
 }
 
 void setup_speed_hook()
 {
     static const uint8_t code[64] = {};
-    DWORD old_protect;
-    VirtualProtect((void *)code, sizeof(code), PAGE_EXECUTE_READWRITE, &old_protect);
+    zmod::unprotect(code, sizeof(code));
 
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C9 48 8B C8");
-    auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(jmp_site + 5, code));
-    float speed = 0.5;
+    auto speed = (float)(60.0 / globals.target_fps);
     auto patch = zmod::parse_hex("F3 0F 10 0D 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
-    std::memcpy((void *)code, patch.data(), patch.size());
-    zmod::write_memory((void *)jmp_site, jmp.data(), jmp.size());
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
+}
+
+void setup_camera_speed_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 0F 11 46 10");
+    auto speed = (float)(60.0 / globals.target_fps);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
+}
+
+void setup_musou_camera_speed_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 0F 11 84 8B 78 01 00 00");
+    auto speed = (float)(60.0 / globals.target_fps);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
+}
+
+void setup_physics_speed_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A F0 F3 0F 59 35 ?? ?? ?? ?? 48 83 7F 48 00");
+    auto speed = (float)(60.0 / globals.target_fps);
+    auto patch = zmod::parse_hex("F3 0F 10 35 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
+}
+
+// This has a bug that stops particles from starting, maybe the others have bugs too?
+void setup_effects_speed_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 8B 01");
+    auto speed = (float)(60.0 / globals.target_fps);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
 }
 
 void module_main(HINSTANCE hinstDLL)
@@ -77,6 +142,7 @@ void module_main(HINSTANCE hinstDLL)
     zmod::ini ini = {
         {{L"zmod_wo4u_performance", L"global_speed_multiplier"}, L"1.0"},
         {{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}, L"1.0"},
+        {{L"zmod_wo4u_performance", L"target_fps"}, L"60.0"},
     };
 
     auto ini_path = zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u_performance.ini");
@@ -89,24 +155,29 @@ void module_main(HINSTANCE hinstDLL)
         zmod::write_ini_file(ini_path, ini);
     }
 
-    auto dt_target = 1.0 / (60.0 * std::wcstod(ini[{L"zmod_wo4u_performance", L"global_speed_multiplier"}].c_str(), nullptr));
+    auto target_fps = std::wcstof(ini[{L"zmod_wo4u_performance", L"target_fps"}].c_str(), nullptr);
+    auto dt_target = 1.0 / (target_fps * std::wcstod(ini[{L"zmod_wo4u_performance", L"global_speed_multiplier"}].c_str(), nullptr));
     globals.dt_target = dt_target;
     globals.dt_sleep = dt_target - 0.0016;
+    globals.target_fps = target_fps;
 
     zmod::set_timer_resolution();
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
     globals.frequency = (double)frequency.QuadPart;
 
-    globals.late_frame_compensation_multiplier = std::min(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
+    globals.late_frame_compensation_multiplier = std::max(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
 
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
-    auto patch = zmod::parse_hex("E8 ?? ?? ?? ??");
-    insert_relative_address(&patch[1], (void *)&addr[5], wait_loop);
-    zmod::write_memory((void *)addr, patch.data(), patch.size());
+    auto patch = zmod::parse_hex("E8 ?? ?? ?? ??", rel(addr + 5, wait_loop));
+    // insert_relative_address(&patch[1], (void *)&addr[5], wait_loop);
+    zmod::write_memory(addr, patch.data(), patch.size());
 
     setup_speed_hook();
+    setup_camera_speed_hook();
+    setup_musou_camera_speed_hook();
+    setup_physics_speed_hook();
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)
