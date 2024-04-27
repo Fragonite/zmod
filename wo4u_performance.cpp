@@ -11,12 +11,32 @@ fn_7024D0_t wait_loop;
 
 struct
 {
+    double frequency;
+    double target_fps;
     double dt_target;
     double dt_sleep;
-    double frequency;
     double late_frame_compensation_multiplier;
-    double target_fps;
 } globals;
+
+template <typename T, typename U>
+int32_t rel(T *next_instruction, U *absolute)
+{
+    return (int32_t)((intptr_t)absolute - (intptr_t)next_instruction);
+}
+
+template <typename T, typename U>
+void setup_jmp(T *pounce, U *splat)
+{
+    auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(pounce + 5, splat));
+    zmod::write_memory(pounce, jmp.data(), jmp.size());
+}
+
+template <typename T, typename U>
+void setup_call(T *pounce, U *splat)
+{
+    auto jmp = zmod::parse_hex("E8 ?? ?? ?? ??", rel(pounce + 5, splat));
+    zmod::write_memory(pounce, jmp.data(), jmp.size());
+}
 
 void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
 {
@@ -47,23 +67,11 @@ void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
     }
 }
 
-void insert_relative_address(void *dst, void *next_instruction, void *absolute)
+void setup_wait_loop_hook()
 {
-    auto relative = (intptr_t)absolute - (intptr_t)next_instruction;
-    std::memcpy(dst, &relative, 4);
-}
-
-template <typename T, typename U>
-int32_t rel(T *next_instruction, U *absolute)
-{
-    return (int32_t)((intptr_t)absolute - (intptr_t)next_instruction);
-}
-
-template <typename T, typename U>
-void setup_jmp(T *pounce, U *splat)
-{
-    auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(pounce + 5, splat));
-    zmod::write_memory(pounce, jmp.data(), jmp.size());
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
+    setup_call(addr, wait_loop);
 }
 
 void setup_speed_hook()
@@ -122,7 +130,7 @@ void setup_physics_speed_hook()
     setup_jmp(jmp_site, code);
 }
 
-// This has a bug that stops particles from starting, maybe the others have bugs too?
+// Particle lifetime is based on frame rate. This hook only adjusts particle and effect speed.
 void setup_effects_speed_hook()
 {
     static const uint8_t code[64] = {};
@@ -130,6 +138,20 @@ void setup_effects_speed_hook()
 
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 8B 01");
+    auto speed = (float)(60.0 / globals.target_fps);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+    setup_jmp(jmp_site, code);
+}
+
+void setup_rim_lighting_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 0F 58 83 D8 34 00 00") - 13;
     auto speed = (float)(60.0 / globals.target_fps);
     auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
     zmod::write_memory_unsafe(code, patch.data(), patch.size());
@@ -155,29 +177,26 @@ void module_main(HINSTANCE hinstDLL)
         zmod::write_ini_file(ini_path, ini);
     }
 
-    auto target_fps = std::wcstof(ini[{L"zmod_wo4u_performance", L"target_fps"}].c_str(), nullptr);
-    auto dt_target = 1.0 / (target_fps * std::wcstod(ini[{L"zmod_wo4u_performance", L"global_speed_multiplier"}].c_str(), nullptr));
-    globals.dt_target = dt_target;
-    globals.dt_sleep = dt_target - 0.0016;
-    globals.target_fps = target_fps;
-
     zmod::set_timer_resolution();
     LARGE_INTEGER frequency;
     QueryPerformanceFrequency(&frequency);
     globals.frequency = (double)frequency.QuadPart;
 
+    auto target_fps = std::wcstof(ini[{L"zmod_wo4u_performance", L"target_fps"}].c_str(), nullptr);
+    auto dt_target = 1.0 / (target_fps * std::wcstod(ini[{L"zmod_wo4u_performance", L"global_speed_multiplier"}].c_str(), nullptr));
+
+    globals.target_fps = target_fps;
+    globals.dt_target = dt_target;
+    globals.dt_sleep = dt_target - 0.0016;
     globals.late_frame_compensation_multiplier = std::max(1.0, std::wcstod(ini[{L"zmod_wo4u_performance", L"late_frame_compensation_multiplier"}].c_str(), nullptr));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
-    auto patch = zmod::parse_hex("E8 ?? ?? ?? ??", rel(addr + 5, wait_loop));
-    // insert_relative_address(&patch[1], (void *)&addr[5], wait_loop);
-    zmod::write_memory(addr, patch.data(), patch.size());
-
+    setup_wait_loop_hook();
     setup_speed_hook();
     setup_camera_speed_hook();
     setup_musou_camera_speed_hook();
     setup_physics_speed_hook();
+    setup_effects_speed_hook();
+    setup_rim_lighting_hook();
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)
