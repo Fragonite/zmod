@@ -52,6 +52,26 @@ void insert_relative_address(void *dst, void *next_instruction, void *absolute)
     std::memcpy(dst, &relative, 4);
 }
 
+int32_t rel(const uint8_t *next_instruction, const uint8_t *absolute)
+{
+    return (int32_t)((intptr_t)absolute - (intptr_t)next_instruction);
+}
+
+void setup_speed_hook()
+{
+    const uint8_t code[64] = {};
+    DWORD old_protect;
+    VirtualProtect((void *)code, sizeof(code), PAGE_EXECUTE_READWRITE, &old_protect);
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C9 48 8B C8");
+    auto jmp = zmod::parse_hex("E8 ?? ?? ?? ??", rel(jmp_site + 5, code));
+    float speed = 0.5;
+    auto patch = zmod::parse_hex("F3 0F 10 0D 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
+    std::memcpy((void *)code, patch.data(), patch.size());
+    zmod::write_memory((void *)jmp_site, jmp.data(), jmp.size());
+}
+
 void module_main(HINSTANCE hinstDLL)
 {
     zmod::ini ini = {
@@ -85,6 +105,8 @@ void module_main(HINSTANCE hinstDLL)
     auto patch = zmod::parse_hex("E8 ?? ?? ?? ??");
     insert_relative_address(&patch[1], (void *)&addr[5], wait_loop);
     zmod::write_memory((void *)addr, patch.data(), patch.size());
+
+    setup_speed_hook();
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)

@@ -162,6 +162,33 @@ namespace zmod
             ;
     }
 
+    template <typename T>
+    void add_replacements_helper(std::vector<uint8_t> &replacements, const T &arg)
+    {
+        if constexpr (std::is_same_v<T, std::string>)
+        {
+            for (auto c : arg)
+            {
+                replacements.push_back(c);
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            for (auto c : arg)
+            {
+                replacements.push_back(c);
+            }
+        }
+        else if constexpr (std::is_integral_v<T> || std::is_same_v<T, float> || std::is_same_v<T, double>)
+        {
+            uint8_t *bytes = reinterpret_cast<uint8_t *>(&arg);
+            for (int i = 0; i < sizeof(T); ++i)
+            {
+                replacements.push_back(bytes[i]);
+            }
+        }
+    }
+
     std::vector<uint8_t> parse_hex(const std::string &hex)
     {
         std::istringstream iss(hex);
@@ -172,6 +199,37 @@ namespace zmod
             if (s == "??")
             {
                 bytes.push_back(0);
+            }
+            else
+            {
+                bytes.push_back((uint8_t)std::stoul(s, nullptr, 16));
+            }
+        }
+        return bytes;
+    }
+
+    template <typename... Args>
+    std::vector<uint8_t> parse_hex(const std::string &hex, Args... args)
+    {
+        std::istringstream iss(hex);
+        std::string s;
+        std::vector<uint8_t> bytes;
+        std::vector<uint8_t> replacements;
+        (add_replacements_helper(replacements, args), ...);
+        auto index = 0;
+        while (iss >> s)
+        {
+            if (s == "??")
+            {
+                if (index < replacements.size())
+                {
+                    bytes.push_back(replacements[index]);
+                    ++index;
+                }
+                else
+                {
+                    bytes.push_back(0);
+                }
             }
             else
             {
