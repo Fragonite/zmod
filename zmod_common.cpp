@@ -181,7 +181,7 @@ namespace zmod
         }
         else if constexpr (std::is_integral_v<T> || std::is_same_v<T, float> || std::is_same_v<T, double>)
         {
-            uint8_t *bytes = reinterpret_cast<uint8_t *>(&arg);
+            const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&arg);
             for (int i = 0; i < sizeof(T); ++i)
             {
                 replacements.push_back(bytes[i]);

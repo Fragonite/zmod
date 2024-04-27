@@ -59,13 +59,13 @@ int32_t rel(const uint8_t *next_instruction, const uint8_t *absolute)
 
 void setup_speed_hook()
 {
-    const uint8_t code[64] = {};
+    static const uint8_t code[64] = {};
     DWORD old_protect;
     VirtualProtect((void *)code, sizeof(code), PAGE_EXECUTE_READWRITE, &old_protect);
 
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C9 48 8B C8");
-    auto jmp = zmod::parse_hex("E8 ?? ?? ?? ??", rel(jmp_site + 5, code));
+    auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(jmp_site + 5, code));
     float speed = 0.5;
     auto patch = zmod::parse_hex("F3 0F 10 0D 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", rel(code + 13, jmp_site + 5), speed);
     std::memcpy((void *)code, patch.data(), patch.size());
