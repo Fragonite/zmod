@@ -26,20 +26,12 @@ struct
     void ****game_vtable = nullptr;
     void **game_info = nullptr;
     double party_level_multiplier;
+    uint32_t difficulty;
 } globals;
 
 void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t a3, uint32_t a4, uint8_t a5)
 {
-    enum
-    {
-        EASY = 0,
-        NORMAL = 1,
-        HARD = 2,
-        CHAOTIC = 3,
-        PANDEMONIUM = 4,
-    };
-
-    difficulty = PANDEMONIUM;
+    difficulty = globals.difficulty;
     initialise_map_orig(map_id, difficulty, a3, a4, a5);
 }
 
@@ -217,7 +209,8 @@ void module_main(HINSTANCE hinstDLL)
         {{L"camera", L"max_distance"}, L"560.0"},
         {{L"camera", L"angle"}, L"15.4"},
 
-        {{L"difficulty", L"perpetual_pandemonium"}, L"1"},
+        {{L"difficulty", L"force_chaotic"}, L"1"},
+        {{L"difficulty", L"force_pandemonium"}, L"1"},
         {{L"difficulty", L"scale_sorties_to_party_level"}, L"1"},
         {{L"difficulty", L"scale_new_weapons_to_party_level"}, L"1"},
         {{L"difficulty", L"scale_lottery_weapons_to_party_level"}, L"1"},
@@ -287,8 +280,18 @@ void module_main(HINSTANCE hinstDLL)
         globals.game_info = (void **)(wo4u + 0xF441E8);
         globals.party_level_multiplier = ini.get_double({L"difficulty", L"party_level_multiplier"});
 
-        if (ini.get_wstring({L"difficulty", L"perpetual_pandemonium"}) != L"0")
+        uint32_t difficulty = 0;
+        if (ini.get_wstring({L"difficulty", L"force_chaotic"}) != L"0")
         {
+            difficulty = 3;
+        }
+        if (ini.get_wstring({L"difficulty", L"force_pandemonium"}) != L"0")
+        {
+            difficulty = 4;
+        }
+        if (difficulty)
+        {
+            globals.difficulty = difficulty;
             initialise_map_orig = (fn_21BE00_t *)(zmod::find_pattern(wo4u, 0xFFFFFF, "45 33 ED 81 F9 2B 01 00 00") - 0x3F);
             DetourTransactionBegin();
             DetourUpdateThread(GetCurrentThread());
