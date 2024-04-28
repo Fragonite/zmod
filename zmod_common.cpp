@@ -106,6 +106,51 @@ namespace zmod
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
     // using ini = ini_map;
 
+    class memory
+    {
+        struct protection_info
+        {
+            void *addr;
+            size_t size;
+            DWORD old_protect;
+        };
+        std::stack<protection_info> protections;
+
+    public:
+        bool unprotect(void *addr, size_t size)
+        {
+            DWORD old_protect;
+            if (VirtualProtect(addr, size, PAGE_EXECUTE_READWRITE, &old_protect))
+            {
+                protections.push({addr, size, old_protect});
+                return true;
+            }
+            return false;
+        }
+        bool write(void *dst, void *src, size_t size)
+        {
+            if (unprotect(dst, size))
+            {
+                memcpy(dst, src, size);
+                return true;
+            }
+            return false;
+        }
+        void write_unsafe(void *dst, void *src, size_t size)
+        {
+            memcpy(dst, src, size);
+        }
+        ~memory()
+        {
+            while (!protections.empty())
+            {
+                auto &info = protections.top();
+                VirtualProtect(info.addr, info.size, info.old_protect, &info.old_protect);
+                protections.pop();
+            }
+        }
+    };
+
     bool file_exists(const std::filesystem::path &path)
     {
         return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
@@ -136,6 +181,14 @@ namespace zmod
         if (!(GetModuleFileNameW(module, module_path, MAX_PATH)))
             ;
         return std::filesystem::path(module_path);
+    }
+
+    std::filesystem::path get_system_path()
+    {
+        wchar_t system_path[MAX_PATH];
+        if (!(GetSystemDirectoryW(system_path, MAX_PATH)))
+            ;
+        return std::filesystem::path(system_path);
     }
 
     const uint8_t *find_pattern_in_memory(const uint8_t *start, const uint8_t *end, const std::vector<uint8_t> &pattern, const std::string &mask)
@@ -212,6 +265,33 @@ namespace zmod
             ;
     }
 
+    template <typename T>
+    void add_replacements_helper(std::vector<uint8_t> &replacements, const T &arg)
+    {
+        if constexpr (std::is_same_v<T, std::string>)
+        {
+            for (auto c : arg)
+            {
+                replacements.push_back(c);
+            }
+        }
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            for (auto c : arg)
+            {
+                replacements.push_back(c);
+            }
+        }
+        else if constexpr (std::is_integral_v<T> || std::is_same_v<T, float> || std::is_same_v<T, double>)
+        {
+            const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&arg);
+            for (int i = 0; i < sizeof(T); ++i)
+            {
+                replacements.push_back(bytes[i]);
+            }
+        }
+    }
+
     std::vector<uint8_t> parse_hex(const std::string &hex)
     {
         std::istringstream iss(hex);
@@ -222,6 +302,37 @@ namespace zmod
             if (s == "??")
             {
                 bytes.push_back(0);
+            }
+            else
+            {
+                bytes.push_back((uint8_t)std::stoul(s, nullptr, 16));
+            }
+        }
+        return bytes;
+    }
+
+    template <typename... Args>
+    std::vector<uint8_t> parse_hex(const std::string &hex, Args... args)
+    {
+        std::istringstream iss(hex);
+        std::string s;
+        std::vector<uint8_t> bytes;
+        std::vector<uint8_t> replacements;
+        (add_replacements_helper(replacements, args), ...);
+        auto index = 0;
+        while (iss >> s)
+        {
+            if (s == "??")
+            {
+                if (index < replacements.size())
+                {
+                    bytes.push_back(replacements[index]);
+                    ++index;
+                }
+                else
+                {
+                    bytes.push_back(0);
+                }
             }
             else
             {
