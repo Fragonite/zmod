@@ -1,7 +1,110 @@
+// #include <windows.h>
+// #include <string>
+// #include <filesystem>
+// #include <map>
 namespace zmod
 {
+    class ini
+    {
+    public:
+        using map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
+
+    private:
+        map data;
+        std::filesystem::path path;
+
+    public:
+        /**
+         * @brief Read data from an ini file.
+         * @param path The path to the ini file.
+         */
+        void read(const std::filesystem::path &path)
+        {
+            wchar_t buffer[1024];
+            for (const auto &[key, value] : data)
+            {
+                GetPrivateProfileStringW(key.first.c_str(), key.second.c_str(), value.c_str(), buffer, 1024, path.wstring().c_str());
+                data[key] = buffer;
+            }
+        }
+
+        /**
+         * @brief Write data to an ini file.
+         * @param path The path to the ini file.
+         */
+        void write(const std::filesystem::path &path)
+        {
+            for (const auto &[key, value] : data)
+            {
+                if (!(WritePrivateProfileStringW(key.first.c_str(), key.second.c_str(), value.c_str(), path.wstring().c_str())))
+                    ;
+            }
+        }
+
+        /**
+         * @brief Check if a file exists.
+         * @param path The path to the file.
+         * @return True if the file exists, false otherwise.
+         */
+        bool exists(const std::filesystem::path &path)
+        {
+            return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
+        }
+
+        /**
+         * @brief Set many values at once. Useful for setting defaults.
+         * @param data The data to set.
+         */
+        void set_many(const map &data)
+        {
+            for (const auto &[key, value] : data)
+            {
+                this->data[key] = value;
+            }
+        }
+
+        /**
+         * @brief Get a wide string value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        std::wstring get_wstring(const std::pair<std::wstring, std::wstring> &key)
+        {
+            return data[key];
+        }
+
+        /**
+         * @brief Get a double value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        double get_double(const std::pair<std::wstring, std::wstring> &key)
+        {
+            return std::wcstod(data[key].c_str(), nullptr);
+        }
+
+        /**
+         * @brief Get a float value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        float get_float(const std::pair<std::wstring, std::wstring> &key)
+        {
+            return std::wcstof(data[key].c_str(), nullptr);
+        }
+
+        /**
+         * @brief Get an int (long) value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        int get_int(const std::pair<std::wstring, std::wstring> &key)
+        {
+            return std::wcstol(data[key].c_str(), nullptr, 10);
+        }
+    };
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
-    using ini = ini_map;
+    // using ini = ini_map;
 
     bool file_exists(const std::filesystem::path &path)
     {
@@ -191,7 +294,7 @@ namespace zmod
         return find_pattern(base, 0x1000000, bytes, mask);
     }
 
-    #ifdef WINMM
+#ifdef WINMM
 
     void set_timer_resolution()
     {
@@ -216,5 +319,5 @@ namespace zmod
         NtSetTimerResolution(MinimumResolution, TRUE, &CurrentResolution);
     }
 
-    #endif
+#endif
 }
