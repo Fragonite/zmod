@@ -15,10 +15,18 @@ namespace zmod
 
     public:
         /**
+         * @brief Construct a new ini object.
+         * @param path The path to the ini file.
+         */
+        ini(std::filesystem::path path) : path(path)
+        {
+        }
+
+        /**
          * @brief Read data from an ini file.
          * @param path The path to the ini file.
          */
-        void read(const std::filesystem::path &path)
+        void load()
         {
             wchar_t buffer[1024];
             for (const auto &[key, value] : data)
@@ -32,7 +40,7 @@ namespace zmod
          * @brief Write data to an ini file.
          * @param path The path to the ini file.
          */
-        void write(const std::filesystem::path &path)
+        void save()
         {
             for (const auto &[key, value] : data)
             {
@@ -46,7 +54,7 @@ namespace zmod
          * @param path The path to the file.
          * @return True if the file exists, false otherwise.
          */
-        bool exists(const std::filesystem::path &path)
+        bool exists()
         {
             return std::filesystem::exists(path) && std::filesystem::is_regular_file(path);
         }
@@ -175,6 +183,30 @@ namespace zmod
         }
     }
 
+    /**
+     * @brief Unprotect memory for reading, writing, and executing.
+     * @param addr The address to unprotect.
+     * @param size The size to unprotect.
+     */
+    template <typename T>
+    bool unprotect(T *addr, size_t size)
+    {
+        DWORD old_protect;
+        return VirtualProtect((void *)addr, size, PAGE_EXECUTE_READWRITE, &old_protect);
+    }
+
+    /**
+     * @brief Write memory unsafely.
+     * @param addr The address to write to.
+     * @param data The data to write.
+     * @param size The size to write.
+     */
+    template <typename T, typename U>
+    void write_memory_unsafe(T *addr, const U *data, size_t size)
+    {
+        std::memcpy((void *)addr, (void *)data, size);
+    }
+
     std::filesystem::path get_module_path(HMODULE module)
     {
         wchar_t module_path[MAX_PATH];
@@ -255,13 +287,14 @@ namespace zmod
         return nullptr;
     }
 
-    void write_memory(void *address, const void *data, size_t size)
+    template <typename T, typename U>
+    void write_memory(T *address, const U *data, size_t size)
     {
         DWORD old_protect;
-        if (!(VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &old_protect)))
+        if (!(VirtualProtect((void *)address, size, PAGE_EXECUTE_READWRITE, &old_protect)))
             ;
-        std::memcpy(address, data, size);
-        if (!(VirtualProtect(address, size, old_protect, &old_protect)))
+        std::memcpy((void *)address, (void *)data, size);
+        if (!(VirtualProtect((void *)address, size, old_protect, &old_protect)))
             ;
     }
 
@@ -403,6 +436,41 @@ namespace zmod
         std::memcpy(bytes.data(), str.data(), bytes.size());
         auto mask = std::string(bytes.size(), 'x');
         return find_pattern(base, 0x1000000, bytes, mask);
+    }
+
+    /**
+     * @brief Return the relative offset between two addresses.
+     * @param next_instruction The address of the next instruction.
+     * @param absolute The address to jump to.
+     */
+    template <typename T, typename U>
+    int32_t rel(T *next_instruction, U *absolute)
+    {
+        return (int32_t)((intptr_t)absolute - (intptr_t)next_instruction);
+    }
+
+    /**
+     * @brief Setup a call instruction.
+     * @param pounce The address to call from.
+     * @param splat The address to call.
+     */
+    template <typename T, typename U>
+    void setup_call(T *pounce, U *splat)
+    {
+        auto jmp = zmod::parse_hex("E8 ?? ?? ?? ??", rel(pounce + 5, splat));
+        zmod::write_memory(pounce, jmp.data(), jmp.size());
+    }
+
+    /**
+     * @brief Setup a jump instruction.
+     * @param pounce The address to jump from.
+     * @param splat The address to jump to.
+     */
+    template <typename T, typename U>
+    void setup_jmp(T *pounce, U *splat)
+    {
+        auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(pounce + 5, splat));
+        zmod::write_memory(pounce, jmp.data(), jmp.size());
     }
 
 #ifdef WINMM
