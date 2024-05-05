@@ -7,6 +7,7 @@
 #include <map>
 #include <vector>
 #include <sstream>
+#include <dwmapi.h>
 #include "detours.h"
 #include "zmod_common.cpp"
 
@@ -256,6 +257,8 @@ namespace frame_time
         double dt_multiplier;
         int32_t fps_target;
         int32_t fps_multiplier;
+        int32_t offscreen_battle_modulo;
+        int32_t offscreen_movement_modulo;
         int32_t *frame_counter;
         bool vsync;
         zmod::ini_map ini;
@@ -416,42 +419,73 @@ namespace frame_time
         return offset;
     }
 
-    void module_main(HINSTANCE instance)
+    void set_ini_defaults(zmod::ini &ini)
     {
-        auto module_path = zmod::get_module_path(instance);
-        auto ini_path = module_path.replace_extension(L".ini");
-        auto module_key = module_path.stem().wstring();
+        ini.set_many({
+            {{L"frame_time", L"process_priority_class"}, L"0x00000080"},
+            {{L"frame_time", L"target_fps"}, L"auto"},
+            {{L"frame_time", L"global_speed_multiplier"}, L"1.0"},
+            {{L"frame_time", L"vsync"}, L"0"},
+            {{L"frame_time", L"offscreen_battle_tick_rate"}, L"1.0"},
+            {{L"frame_time", L"offscreen_movement_tick_rate"}, L"1.0"},
+        });
+    }
 
-        globals.ini = {
-            {{module_key, L"process_priority_class"}, L"0x00000080"},
-            {{module_key, L"target_fps"}, L"120.0"},
-            {{module_key, L"clock_speed"}, L"1.0"},
-            {{module_key, L"vsync"}, L"0"},
-        };
-
-        if (!(zmod::file_exists(ini_path)))
-        {
-            zmod::write_ini_file(ini_path, globals.ini);
-        }
-        zmod::read_ini_file(ini_path, globals.ini);
-
-        auto process_priority_class = std::stoul(globals.ini[{module_key, L"process_priority_class"}], nullptr, 0);
+    void module_main(zmod::ini &ini)
+    {
+        auto process_priority_class = ini.get_uint({L"frame_time", L"process_priority_class"}, 0);
         if (process_priority_class)
         {
             if (!(SetPriorityClass(GetCurrentProcess(), process_priority_class)))
                 ;
         }
 
-        auto target_fps = std::wcstod(globals.ini[{module_key, L"target_fps"}].c_str(), nullptr);
-        auto clock_speed = std::wcstod(globals.ini[{module_key, L"clock_speed"}].c_str(), nullptr);
+        double target_fps = 60.0;
+        auto target_fps_wstring = zmod::to_lower(ini.get_wstring({L"frame_time", L"target_fps"}));
+        if (target_fps_wstring == L"auto")
+        {
+            // Get high resolution timing info.
+            DWM_TIMING_INFO timingInfo = {sizeof(DWM_TIMING_INFO)};
+            if (DwmGetCompositionTimingInfo(NULL, &timingInfo) == S_OK)
+            {
+                target_fps = (double)timingInfo.rateRefresh.uiNumerator / (double)timingInfo.rateRefresh.uiDenominator;
+            }
+            else
+            {
+                // Get rounded refresh rate as a fallback.
+                DEVMODEW devMode = {0};
+                devMode.dmSize = sizeof(devMode);
+
+                if (EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devMode))
+                {
+                    target_fps = (double)devMode.dmDisplayFrequency;
+                }
+            }
+
+            // Cap the target FPS to 120 when using auto.
+            // We check for 121.0 instead of 120.0 in case the monitor is running slightly faster than 120 Hz.
+            if (target_fps > 121.0)
+            {
+                target_fps = 120.0;
+            }
+        }
+        else
+        {
+            target_fps = ini.get_double({L"frame_time", L"target_fps"});
+        }
+
+        auto global_speed_multiplier = ini.get_double({L"frame_time", L"global_speed_multiplier"});
 
         globals.fps_target = (int32_t)std::round(target_fps);
         globals.fps_multiplier = std::max((int32_t)std::round(target_fps) / 60, 1);
-        globals.dt_target = 1.0 / (target_fps * clock_speed);
+        globals.offscreen_battle_modulo = (int32_t)std::round((double)globals.fps_target / ini.get_double({L"frame_time", L"offscreen_battle_tick_rate"}));
+        globals.offscreen_movement_modulo = (int32_t)std::round((double)globals.fps_target / ini.get_double({L"frame_time", L"offscreen_movement_tick_rate"}));
+
+        globals.dt_target = 1.0 / (target_fps * global_speed_multiplier);
         globals.dt_sleep = globals.dt_target - 0.0016; // Sleep if we have greater than 1.6 ms to spare
         globals.dt_multiplier = 60.0 / std::round(target_fps);
 
-        globals.vsync = globals.ini[{module_key, L"vsync"}] == L"1";
+        globals.vsync = ini.get_bool({L"frame_time", L"vsync"});
 
         zmod::set_timer_resolution();
 
@@ -483,7 +517,7 @@ namespace frame_time
         DetourTransactionCommit();
 
         {
-            auto p = &globals.fps_target;
+            auto p = &globals.offscreen_movement_modulo;
             auto offscreen_move_address = zmod::find_pattern("8B 8A 90 3E 05 00 8B 2D");
             auto offscreen_move_patch = zmod::parse_hex("8B 0D ?? ?? ?? ?? 8B 82 90 3E 05 00 99 F7 F9 8B CA BD 01 00 00 00 31 FF EB 11");
             zmod::write_memory(&offscreen_move_patch.data()[2], &p, 4);
@@ -493,6 +527,7 @@ namespace frame_time
             zmod::write_memory(&offscreen_move_patch_2.data()[2], &p, 4);
             zmod::write_memory((void *)(offscreen_move_address + 47), offscreen_move_patch_2.data(), offscreen_move_patch_2.size());
 
+            p = &globals.offscreen_battle_modulo;
             auto offscreen_battle_address = zmod::find_pattern("8B 8A 90 3E 05 00 8B 35");
             auto offscreen_battle_patch = zmod::parse_hex("8B 0D ?? ?? ?? ?? 8B 82 90 3E 05 00 99 F7 F9 8B CA BE 01 00 00 00 31 FF 30 DB EB 11");
             zmod::write_memory(&offscreen_battle_patch.data()[2], &p, 4);

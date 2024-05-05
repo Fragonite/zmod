@@ -4,6 +4,18 @@
 // #include <map>
 namespace zmod
 {
+    /**
+     * @brief Convert a wide string to lowercase.
+     * @param str The wide string to convert.
+     * @return The lowercase wide string.
+     */
+    std::wstring to_lower(const std::wstring &str)
+    {
+        std::wstring lower = str;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+        return lower;
+    }
+
     class ini
     {
     public:
@@ -106,9 +118,30 @@ namespace zmod
          * @param key The key to get.
          * @return The value.
          */
-        int get_int(const std::pair<std::wstring, std::wstring> &key)
+        int get_int(const std::pair<std::wstring, std::wstring> &key, int base = 10)
         {
-            return std::wcstol(data[key].c_str(), nullptr, 10);
+            return std::wcstol(data[key].c_str(), nullptr, base);
+        }
+
+        /**
+         * @brief Get an unsigned int (long) value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        unsigned int get_uint(const std::pair<std::wstring, std::wstring> &key, int base = 10)
+        {
+            return std::wcstoul(data[key].c_str(), nullptr, base);
+        }
+
+        /**
+         * @brief Get a boolean value.
+         * @param key The key to get.
+         * @return The value.
+         */
+        bool get_bool(const std::pair<std::wstring, std::wstring> &key)
+        {
+            auto value = to_lower(data[key]);
+            return value != L"0" && value != L"false";
         }
     };
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
