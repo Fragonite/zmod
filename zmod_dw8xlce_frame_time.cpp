@@ -1,15 +1,15 @@
 // #define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#define WINMM
-#include <windows.h>
-#include <string>
-#include <filesystem>
-#include <map>
-#include <vector>
-#include <sstream>
-#include <dwmapi.h>
-#include "detours.h"
-#include "zmod_common.cpp"
+// #define NOMINMAX
+// #define WINMM
+// #include <windows.h>
+// #include <string>
+// #include <filesystem>
+// #include <map>
+// #include <vector>
+// #include <sstream>
+// #include <dwmapi.h>
+// #include "detours.h"
+// #include "zmod_common.cpp"
 
 namespace frame_time
 {
@@ -571,17 +571,5 @@ namespace frame_time
             insert_relative_address(&patch[1], (void *)&addr[5], should_tick_to_ecx);
             zmod::write_memory((void *)addr, patch.data(), patch.size());
         }
-    }
-
-    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-    {
-        if (fdwReason == DLL_PROCESS_ATTACH)
-        {
-            if (!(DisableThreadLibraryCalls(hinstDLL)))
-                ;
-
-            module_main(hinstDLL);
-        }
-        return TRUE;
     }
 }
