@@ -44,7 +44,7 @@ namespace zmod
             for (const auto &[key, value] : data)
             {
                 GetPrivateProfileStringW(key.first.c_str(), key.second.c_str(), value.c_str(), buffer, 1024, path.wstring().c_str());
-                data[{key.first, key.second}] = buffer;
+                data[key] = buffer;
             }
         }
 
@@ -145,52 +145,6 @@ namespace zmod
         }
     };
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
-    // using ini = ini_map;
-
-    class memory
-    {
-        struct protection_info
-        {
-            void *addr;
-            size_t size;
-            DWORD old_protect;
-        };
-        std::stack<protection_info> protections;
-
-    public:
-        bool unprotect(void *addr, size_t size)
-        {
-            DWORD old_protect;
-            if (VirtualProtect(addr, size, PAGE_EXECUTE_READWRITE, &old_protect))
-            {
-                protections.push({addr, size, old_protect});
-                return true;
-            }
-            return false;
-        }
-        bool write(void *dst, void *src, size_t size)
-        {
-            if (unprotect(dst, size))
-            {
-                memcpy(dst, src, size);
-                return true;
-            }
-            return false;
-        }
-        void write_unsafe(void *dst, void *src, size_t size)
-        {
-            memcpy(dst, src, size);
-        }
-        ~memory()
-        {
-            while (!protections.empty())
-            {
-                auto &info = protections.top();
-                VirtualProtect(info.addr, info.size, info.old_protect, &info.old_protect);
-                protections.pop();
-            }
-        }
-    };
 
     bool file_exists(const std::filesystem::path &path)
     {
