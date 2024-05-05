@@ -44,7 +44,7 @@ namespace zmod
             for (const auto &[key, value] : data)
             {
                 GetPrivateProfileStringW(key.first.c_str(), key.second.c_str(), value.c_str(), buffer, 1024, path.wstring().c_str());
-                data[key] = buffer;
+                data[{key.first, key.second}] = buffer;
             }
         }
 

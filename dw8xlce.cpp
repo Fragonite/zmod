@@ -26,16 +26,18 @@ void module_main(HINSTANCE hinstDLL)
         {{L"config", L"enable_camera_mod"}, L"1"},
         {{L"config", L"enable_affinity_mod"}, L"0"},
     });
+
+    frame_time::set_ini_defaults(ini);
+    ultrawide::set_ini_defaults(ini);
+    camera::set_ini_defaults(ini);
+    affinity::set_ini_defaults(ini);
+
     if (ini.exists())
     {
         ini.load();
     }
     else
     {
-        frame_time::set_ini_defaults(ini);
-        ultrawide::set_ini_defaults(ini);
-        camera::set_ini_defaults(ini);
-        affinity::set_ini_defaults(ini);
         ini.save();
     }
 
