@@ -1,12 +1,12 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <string>
-#include <filesystem>
-#include <map>
-#include <vector>
-#include <sstream>
-#include <numbers>
-#include "zmod_common.cpp"
+// #define WIN32_LEAN_AND_MEAN
+// #include <windows.h>
+// #include <string>
+// #include <filesystem>
+// #include <map>
+// #include <vector>
+// #include <sstream>
+// #include <numbers>
+// #include "zmod_common.cpp"
 
 namespace camera
 {
@@ -30,10 +30,10 @@ namespace camera
     void set_ini_defaults(zmod::ini &ini)
     {
         ini.set_many({
-            {{L"camera", L"min_distance"}, L"450.0"},
-            {{L"camera", L"max_distance"}, L"500.0"},
-            {{L"camera", L"height"}, L"130.0"},
-            {{L"camera", L"angle"}, L"14.0"},
+            {{L"camera", L"standard_min_distance"}, L"450.0"},
+            {{L"camera", L"standard_max_distance"}, L"500.0"},
+            {{L"camera", L"standard_height"}, L"130.0"},
+            {{L"camera", L"standard_angle"}, L"14.0"},
             {{L"camera", L"blocking_min_distance"}, L"450.0"},
             {{L"camera", L"blocking_max_distance"}, L"500.0"},
             {{L"camera", L"blocking_height"}, L"130.0"},
@@ -45,10 +45,10 @@ namespace camera
     {
         auto camera = (camera_settings *)(zmod::find_pattern("E1 43 00 00 FA 43") - 2);
 
-        camera->standard.min_distance = ini.get_float({L"camera", L"min_distance"});
-        camera->standard.max_distance = ini.get_float({L"camera", L"max_distance"});
-        camera->standard.height = ini.get_float({L"camera", L"height"});
-        camera->standard.angle = (-(ini.get_float({L"camera", L"angle"}))) * (std::numbers::pi / 180.0);
+        camera->standard.min_distance = ini.get_float({L"camera", L"standard_min_distance"});
+        camera->standard.max_distance = ini.get_float({L"camera", L"standard_max_distance"});
+        camera->standard.height = ini.get_float({L"camera", L"standard_height"});
+        camera->standard.angle = (-(ini.get_float({L"camera", L"standard_angle"}))) * (std::numbers::pi / 180.0);
 
         camera->blocking.min_distance = ini.get_float({L"camera", L"blocking_min_distance"});
         camera->blocking.max_distance = ini.get_float({L"camera", L"blocking_max_distance"});

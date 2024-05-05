@@ -1,8 +1,8 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <filesystem>
-#include <map>
-#include "zmod_common.cpp"
+// #define WIN32_LEAN_AND_MEAN
+// #include <windows.h>
+// #include <filesystem>
+// #include <map>
+// #include "zmod_common.cpp"
 
 namespace affinity
 {
@@ -36,41 +36,32 @@ namespace affinity
         memcpy(dst, &absolute_address, sizeof(absolute_address));
     }
 
-    void module_main(HINSTANCE instance)
+    void set_ini_defaults(zmod::ini &ini)
     {
-        auto module_path = zmod::get_module_path(instance);
-        auto ini_path = module_path.replace_filename(L"zmod_dw8xlce_affinity.ini");
+        ini.set_many({
+            {{L"affinity_tetsuo9999", L"force_neutral_affinity"}, L"0"},
+            {{L"affinity_tetsuo9999", L"officers_with_affinity_advantage_can_flinch"}, L"1"},
+            {{L"affinity_fumasparku", L"player_cannot_flinch"}, L"0"},
+        });
+    }
 
-        zmod::ini ini = {
-            {{L"tetsuo9999", L"force_neutral_affinity"}, L"0"},
-            {{L"tetsuo9999", L"officers_with_affinity_advantage_can_flinch"}, L"0"},
-            {{L"fumasparku", L"player_cannot_flinch"}, L"0"},
-        };
-
-        if (zmod::file_exists(ini_path))
-        {
-            zmod::read_ini_file(ini_path, ini);
-        }
-        else
-        {
-            zmod::write_ini_file(ini_path, ini);
-        }
-
-        if (ini[{L"tetsuo9999", L"force_neutral_affinity"}] != L"0")
+    void module_main(zmod::ini &ini)
+    {
+        if (ini.get_bool({L"affinity_tetsuo9999", L"force_neutral_affinity"}))
         {
             auto addr = zmod::find_pattern("8B 44 94 04 33 CC");
             auto patch = zmod::parse_hex("31 C0 40 90");
             zmod::write_memory((void *)addr, patch.data(), patch.size());
         }
 
-        if (ini[{L"tetsuo9999", L"officers_with_affinity_advantage_can_flinch"}] != L"0")
+        if (ini.get_bool({L"affinity_tetsuo9999", L"officers_with_affinity_advantage_can_flinch"}))
         {
             auto addr = zmod::find_pattern("0F 84 B2 00 00 00 80 BE E5 02 00 00 00");
             auto patch = zmod::parse_hex("0F 84 61 FF FF FF");
             zmod::write_memory((void *)addr, patch.data(), patch.size());
         }
 
-        if (ini[{L"fumasparku", L"player_cannot_flinch"}] != L"0")
+        if (ini.get_bool({L"affinity_fumasparku", L"player_cannot_flinch"}))
         {
             auto addr = zmod::find_pattern("8B 76 58 83 C8 FF 50") + 8;
             insert_absolute_address(&flinch_check_orig, (void *)(addr + 4), *(void **)addr);
@@ -79,18 +70,5 @@ namespace affinity
             insert_relative_address(&relative, (void *)(addr + 4), flinch_check_hook);
             zmod::write_memory((void *)addr, &relative, sizeof(relative));
         }
-    }
-
-    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-    {
-        switch (fdwReason)
-        {
-        case DLL_PROCESS_ATTACH:
-            if (!(DisableThreadLibraryCalls(hinstDLL)))
-                ;
-            module_main(hinstDLL);
-            break;
-        }
-        return TRUE;
     }
 }

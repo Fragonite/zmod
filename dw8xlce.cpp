@@ -9,11 +9,13 @@
 #include <stack>
 #include <string>
 #include <vector>
+#include "d3d9.h"
 #include "detours.h"
 #include "zmod_common.cpp"
 #include "zmod_dw8xlce_frame_time.cpp"
 #include "zmod_dw8xlce_ultrawide.cpp"
 #include "zmod_dw8xlce_camera.cpp"
+#include "zmod_dw8xlce_affinity.cpp"
 
 void module_main(HINSTANCE hinstDLL)
 {
@@ -33,6 +35,7 @@ void module_main(HINSTANCE hinstDLL)
         frame_time::set_ini_defaults(ini);
         ultrawide::set_ini_defaults(ini);
         camera::set_ini_defaults(ini);
+        affinity::set_ini_defaults(ini);
         ini.save();
     }
 
@@ -47,6 +50,10 @@ void module_main(HINSTANCE hinstDLL)
     if (ini.get_bool({L"config", L"enable_camera_mod"}))
     {
         camera::module_main(ini);
+    }
+    if (ini.get_bool({L"config", L"enable_affinity_mod"}))
+    {
+        affinity::module_main(ini);
     }
 }
 
