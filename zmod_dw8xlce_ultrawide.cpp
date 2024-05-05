@@ -9,244 +9,248 @@
 #include "detours.h"
 #include "zmod_common.cpp"
 
-struct
+namespace ultrawide
 {
-    uint32_t width;
-    uint32_t height;
-    double aspect_ratio;
-    bool windowed;
-    zmod::ini_map ini;
-} globals;
 
-typedef IDirect3D9 *(WINAPI Direct3DCreate9_t)(UINT SDKVersion);
-Direct3DCreate9_t HookedDirect3DCreate9;
+    struct
+    {
+        uint32_t width;
+        uint32_t height;
+        double aspect_ratio;
+        bool windowed;
+        zmod::ini_map ini;
+    } globals;
 
-typedef HRESULT(APIENTRY CreateDevice_t)(IDirect3D9 *pD3D9, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface);
-CreateDevice_t HookedCreateDevice;
+    typedef IDirect3D9 *(WINAPI Direct3DCreate9_t)(UINT SDKVersion);
+    Direct3DCreate9_t HookedDirect3DCreate9;
 
-typedef HRESULT(APIENTRY Reset_t)(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters);
-Reset_t HookedReset;
+    typedef HRESULT(APIENTRY CreateDevice_t)(IDirect3D9 *pD3D9, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface);
+    CreateDevice_t HookedCreateDevice;
 
-typedef LSTATUS(WINAPI RegQueryValueExA_t)(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
-RegQueryValueExA_t HookedRegQueryValueExA;
+    typedef HRESULT(APIENTRY Reset_t)(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters);
+    Reset_t HookedReset;
 
-typedef LSTATUS(WINAPI RegSetValueExA_t)(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData);
-RegSetValueExA_t HookedRegSetValueExA;
+    typedef LSTATUS(WINAPI RegQueryValueExA_t)(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData);
+    RegQueryValueExA_t HookedRegQueryValueExA;
 
-typedef int(WINAPI GetSystemMetrics_t)(int nIndex);
-GetSystemMetrics_t HookedGetSystemMetrics;
+    typedef LSTATUS(WINAPI RegSetValueExA_t)(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData);
+    RegSetValueExA_t HookedRegSetValueExA;
 
-typedef void(__stdcall function_22DC70_t)(uint32_t a0, float *a1);
-function_22DC70_t HookedAspectRatio;
+    typedef int(WINAPI GetSystemMetrics_t)(int nIndex);
+    GetSystemMetrics_t HookedGetSystemMetrics;
 
-Direct3DCreate9_t *_Direct3DCreate9 = (Direct3DCreate9_t *)GetProcAddress(GetModuleHandleA("d3d9.dll"), "Direct3DCreate9");
-CreateDevice_t *_CreateDevice = nullptr;
-Reset_t *_Reset = nullptr;
-RegQueryValueExA_t *_RegQueryValueExA = RegQueryValueExA;
-RegSetValueExA_t *_RegSetValueExA = RegSetValueExA;
-GetSystemMetrics_t *_GetSystemMetrics = GetSystemMetrics;
-function_22DC70_t *_AspectRatio = nullptr;
+    typedef void(__stdcall function_22DC70_t)(uint32_t a0, float *a1);
+    function_22DC70_t HookedAspectRatio;
 
-IDirect3D9 *WINAPI HookedDirect3DCreate9(UINT SDKVersion)
-{
-    auto rv = _Direct3DCreate9(SDKVersion);
-    if (rv == nullptr)
-        ;
+    Direct3DCreate9_t *_Direct3DCreate9 = (Direct3DCreate9_t *)GetProcAddress(GetModuleHandleA("d3d9.dll"), "Direct3DCreate9");
+    CreateDevice_t *_CreateDevice = nullptr;
+    Reset_t *_Reset = nullptr;
+    RegQueryValueExA_t *_RegQueryValueExA = RegQueryValueExA;
+    RegSetValueExA_t *_RegSetValueExA = RegSetValueExA;
+    GetSystemMetrics_t *_GetSystemMetrics = GetSystemMetrics;
+    function_22DC70_t *_AspectRatio = nullptr;
 
-    auto vtable = *(uint32_t **)rv;
-    _CreateDevice = (CreateDevice_t *)(vtable[16]);
+    IDirect3D9 *WINAPI HookedDirect3DCreate9(UINT SDKVersion)
+    {
+        auto rv = _Direct3DCreate9(SDKVersion);
+        if (rv == nullptr)
+            ;
 
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
-    DetourDetach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
-    DetourAttach(&(PVOID &)_CreateDevice, HookedCreateDevice);
-    DetourTransactionCommit();
+        auto vtable = *(uint32_t **)rv;
+        _CreateDevice = (CreateDevice_t *)(vtable[16]);
 
-    return rv;
-}
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+        DetourDetach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
+        DetourAttach(&(PVOID &)_CreateDevice, HookedCreateDevice);
+        DetourTransactionCommit();
 
-HRESULT APIENTRY HookedCreateDevice(IDirect3D9 *pD3D9, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface)
-{
-    auto rv = _CreateDevice(pD3D9, Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
-    if (rv != D3D_OK)
-        ;
+        return rv;
+    }
 
-    auto vtable = *(uint32_t **)(*ppReturnedDeviceInterface);
-    _Reset = (Reset_t *)vtable[16];
+    HRESULT APIENTRY HookedCreateDevice(IDirect3D9 *pD3D9, UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS *pPresentationParameters, IDirect3DDevice9 **ppReturnedDeviceInterface)
+    {
+        auto rv = _CreateDevice(pD3D9, Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
+        if (rv != D3D_OK)
+            ;
 
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
-    DetourDetach(&(PVOID &)_CreateDevice, HookedCreateDevice);
-    DetourAttach(&(PVOID &)_Reset, HookedReset);
-    DetourTransactionCommit();
+        auto vtable = *(uint32_t **)(*ppReturnedDeviceInterface);
+        _Reset = (Reset_t *)vtable[16];
 
-    return rv;
-}
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+        DetourDetach(&(PVOID &)_CreateDevice, HookedCreateDevice);
+        DetourAttach(&(PVOID &)_Reset, HookedReset);
+        DetourTransactionCommit();
 
-LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
-{
-    auto rv = _RegQueryValueExA(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
-    if (rv == ERROR_SUCCESS)
+        return rv;
+    }
+
+    LSTATUS WINAPI HookedRegQueryValueExA(HKEY hKey, LPCSTR lpValueName, LPDWORD lpReserved, LPDWORD lpType, LPBYTE lpData, LPDWORD lpcbData)
+    {
+        auto rv = _RegQueryValueExA(hKey, lpValueName, lpReserved, lpType, lpData, lpcbData);
+        if (rv == ERROR_SUCCESS)
+        {
+            if (std::string(lpValueName) == "Resolution")
+            {
+                *(DWORD *)lpData = 3;
+            }
+            else if (std::string(lpValueName) == "WindowMode")
+            {
+                *(DWORD *)lpData = 1;
+            }
+        }
+        return rv;
+    }
+
+    LSTATUS WINAPI HookedRegSetValueExA(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData)
     {
         if (std::string(lpValueName) == "Resolution")
         {
-            *(DWORD *)lpData = 3;
+            return ERROR_SUCCESS;
         }
         else if (std::string(lpValueName) == "WindowMode")
         {
-            *(DWORD *)lpData = 1;
+            return ERROR_SUCCESS;
         }
+        return _RegSetValueExA(hKey, lpValueName, Reserved, dwType, lpData, cbData);
     }
-    return rv;
-}
 
-LSTATUS WINAPI HookedRegSetValueExA(HKEY hKey, LPCSTR lpValueName, DWORD Reserved, DWORD dwType, const BYTE *lpData, DWORD cbData)
-{
-    if (std::string(lpValueName) == "Resolution")
+    HRESULT APIENTRY HookedReset(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters)
     {
-        return ERROR_SUCCESS;
+        pPresentationParameters->Windowed = globals.windowed;
+        return _Reset(pDevice, pPresentationParameters);
     }
-    else if (std::string(lpValueName) == "WindowMode")
-    {
-        return ERROR_SUCCESS;
-    }
-    return _RegSetValueExA(hKey, lpValueName, Reserved, dwType, lpData, cbData);
-}
 
-HRESULT APIENTRY HookedReset(IDirect3DDevice9 *pDevice, D3DPRESENT_PARAMETERS *pPresentationParameters)
-{
-    pPresentationParameters->Windowed = globals.windowed;
-    return _Reset(pDevice, pPresentationParameters);
-}
-
-int WINAPI HookedGetSystemMetrics(int nIndex)
-{
-    if (nIndex == 0)
+    int WINAPI HookedGetSystemMetrics(int nIndex)
     {
-        return globals.width;
-    }
-    else if (nIndex == 1)
-    {
-        return 2160; // This hook is a fix for getting 2560x1080 to run in fullscreen without running a higher resolution first
-    }
-    return _GetSystemMetrics(nIndex);
-}
-
-void __stdcall HookedAspectRatio(uint32_t a0, float *a1)
-{
-    if (a1 != nullptr)
-    {
-        if (a1[6] == 360.0)
+        if (nIndex == 0)
         {
-            globals.aspect_ratio = (double)(globals.width * 2) / (double)globals.height;
+            return globals.width;
         }
-        else
+        else if (nIndex == 1)
         {
-            globals.aspect_ratio = (double)globals.width / (double)globals.height;
+            return 2160; // This hook is a fix for getting 2560x1080 to run in fullscreen without running a higher resolution first
         }
-    }
-    _AspectRatio(a0, a1);
-}
-
-void module_main(HINSTANCE instance)
-{
-    auto module_path = zmod::get_module_path(instance);
-    auto ini_path = module_path.replace_extension(L".ini");
-    auto module_key = module_path.stem().wstring();
-
-    globals.ini = {
-        {{module_key, L"width"}, L"1280"},
-        {{module_key, L"height"}, L"720"},
-        {{module_key, L"fullscreen"}, L"0"},
-    };
-
-    if (!(zmod::file_exists(ini_path)))
-    {
-        zmod::write_ini_file(ini_path, globals.ini);
-    }
-    zmod::read_ini_file(ini_path, globals.ini);
-
-    globals.width = std::wcstoul(globals.ini[{module_key, L"width"}].c_str(), nullptr, 10);
-    globals.height = std::wcstoul(globals.ini[{module_key, L"height"}].c_str(), nullptr, 10);
-    globals.aspect_ratio = (double)globals.width / (double)globals.height;
-    globals.windowed = globals.ini[{module_key, L"fullscreen"}] != L"1";
-
-    struct patch
-    {
-        void *address;
-        void *data;
-        size_t size;
-    };
-
-    auto ar = zmod::parse_hex("DD 05 00 00 00 00");
-    {
-        auto p = &globals.aspect_ratio;
-        std::memcpy(ar.data() + 2, &p, 4);
-    }
-    float ar_sp_cutscene = globals.aspect_ratio;
-    float ar_mp_cutscene = globals.aspect_ratio * 2;
-
-    std::vector<patch> patches = {
-        {(void *)(zmod::find_pattern("C3 B8 00 05") + 2), &globals.width, 4},           // 1280 (Executable) Width
-        {(void *)(zmod::find_pattern("B8 00 04 00 00 6A 40") - 20), &globals.width, 4}, // 1280 (Executable) Window Width
-        {(void *)(zmod::find_pattern("B8 D0 02 00 00 5B") + 1), &globals.height, 4},    // 720 (Executable) Window Height
-        {(void *)(zmod::find_pattern("C7 44 24 0C 00 05") + 4), &globals.width, 4},     // 1280 (Executable) HUD Fix
-        {(void *)(zmod::find_pattern("10 00 05 00 00 EB 1C") + 1), &globals.width, 4},  // 1280 (Executable) Rage HUD Fix
-        {(void *)(zmod::find_pattern("80 07 00 00 E0 01 58 02")), &globals.width, 2},   // 1920 (Memory) Necessary
-        {(void *)(zmod::find_pattern("D9 43 14 D8 73 18")), ar.data(), ar.size()},      // Aspect Ratio
-        {(void *)(zmod::find_pattern("40 39 8E E3") + 1), &ar_sp_cutscene, 4},          // Single Player Cutscene Aspect Ratio
-        {(void *)(zmod::find_pattern("40 39 8E E3") + 9), &ar_mp_cutscene, 4},          // Multiplayer Cutscene Aspect Ratio
-    };
-
-    for (auto &p : patches)
-    {
-        zmod::write_memory(p.address, p.data, p.size);
+        return _GetSystemMetrics(nIndex);
     }
 
-    _AspectRatio = (function_22DC70_t *)(zmod::find_pattern("33 C4 89 44 24 44 D9 05") - 8);
-
-    if (!(globals.windowed))
+    void __stdcall HookedAspectRatio(uint32_t a0, float *a1)
     {
-        uint8_t hide_cursor_patch = 0x01;
-        zmod::write_memory((void *)(zmod::find_pattern("10 00 E8 ?? ?? ?? ?? 80 B8") + 13), &hide_cursor_patch, 1);
+        if (a1 != nullptr)
+        {
+            if (a1[6] == 360.0)
+            {
+                globals.aspect_ratio = (double)(globals.width * 2) / (double)globals.height;
+            }
+            else
+            {
+                globals.aspect_ratio = (double)globals.width / (double)globals.height;
+            }
+        }
+        _AspectRatio(a0, a1);
     }
 
-    DetourTransactionBegin();
-    DetourUpdateThread(GetCurrentThread());
-    DetourAttach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
-    DetourAttach(&(PVOID &)_RegQueryValueExA, HookedRegQueryValueExA);
-    DetourAttach(&(PVOID &)_RegSetValueExA, HookedRegSetValueExA);
-    if (!(globals.windowed))
+    void module_main(HINSTANCE instance)
     {
-        DetourAttach(&(PVOID &)_GetSystemMetrics, HookedGetSystemMetrics);
-    }
-    DetourAttach(&(PVOID &)_AspectRatio, HookedAspectRatio);
-    DetourTransactionCommit();
-}
+        auto module_path = zmod::get_module_path(instance);
+        auto ini_path = module_path.replace_extension(L".ini");
+        auto module_key = module_path.stem().wstring();
 
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-{
-    switch (fdwReason)
+        globals.ini = {
+            {{module_key, L"width"}, L"1280"},
+            {{module_key, L"height"}, L"720"},
+            {{module_key, L"fullscreen"}, L"0"},
+        };
+
+        if (!(zmod::file_exists(ini_path)))
+        {
+            zmod::write_ini_file(ini_path, globals.ini);
+        }
+        zmod::read_ini_file(ini_path, globals.ini);
+
+        globals.width = std::wcstoul(globals.ini[{module_key, L"width"}].c_str(), nullptr, 10);
+        globals.height = std::wcstoul(globals.ini[{module_key, L"height"}].c_str(), nullptr, 10);
+        globals.aspect_ratio = (double)globals.width / (double)globals.height;
+        globals.windowed = globals.ini[{module_key, L"fullscreen"}] != L"1";
+
+        struct patch
+        {
+            void *address;
+            void *data;
+            size_t size;
+        };
+
+        auto ar = zmod::parse_hex("DD 05 00 00 00 00");
+        {
+            auto p = &globals.aspect_ratio;
+            std::memcpy(ar.data() + 2, &p, 4);
+        }
+        float ar_sp_cutscene = globals.aspect_ratio;
+        float ar_mp_cutscene = globals.aspect_ratio * 2;
+
+        std::vector<patch> patches = {
+            {(void *)(zmod::find_pattern("C3 B8 00 05") + 2), &globals.width, 4},           // 1280 (Executable) Width
+            {(void *)(zmod::find_pattern("B8 00 04 00 00 6A 40") - 20), &globals.width, 4}, // 1280 (Executable) Window Width
+            {(void *)(zmod::find_pattern("B8 D0 02 00 00 5B") + 1), &globals.height, 4},    // 720 (Executable) Window Height
+            {(void *)(zmod::find_pattern("C7 44 24 0C 00 05") + 4), &globals.width, 4},     // 1280 (Executable) HUD Fix
+            {(void *)(zmod::find_pattern("10 00 05 00 00 EB 1C") + 1), &globals.width, 4},  // 1280 (Executable) Rage HUD Fix
+            {(void *)(zmod::find_pattern("80 07 00 00 E0 01 58 02")), &globals.width, 2},   // 1920 (Memory) Necessary
+            {(void *)(zmod::find_pattern("D9 43 14 D8 73 18")), ar.data(), ar.size()},      // Aspect Ratio
+            {(void *)(zmod::find_pattern("40 39 8E E3") + 1), &ar_sp_cutscene, 4},          // Single Player Cutscene Aspect Ratio
+            {(void *)(zmod::find_pattern("40 39 8E E3") + 9), &ar_mp_cutscene, 4},          // Multiplayer Cutscene Aspect Ratio
+        };
+
+        for (auto &p : patches)
+        {
+            zmod::write_memory(p.address, p.data, p.size);
+        }
+
+        _AspectRatio = (function_22DC70_t *)(zmod::find_pattern("33 C4 89 44 24 44 D9 05") - 8);
+
+        if (!(globals.windowed))
+        {
+            uint8_t hide_cursor_patch = 0x01;
+            zmod::write_memory((void *)(zmod::find_pattern("10 00 E8 ?? ?? ?? ?? 80 B8") + 13), &hide_cursor_patch, 1);
+        }
+
+        DetourTransactionBegin();
+        DetourUpdateThread(GetCurrentThread());
+        DetourAttach(&(PVOID &)_Direct3DCreate9, HookedDirect3DCreate9);
+        DetourAttach(&(PVOID &)_RegQueryValueExA, HookedRegQueryValueExA);
+        DetourAttach(&(PVOID &)_RegSetValueExA, HookedRegSetValueExA);
+        if (!(globals.windowed))
+        {
+            DetourAttach(&(PVOID &)_GetSystemMetrics, HookedGetSystemMetrics);
+        }
+        DetourAttach(&(PVOID &)_AspectRatio, HookedAspectRatio);
+        DetourTransactionCommit();
+    }
+
+    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     {
-    case DLL_PROCESS_ATTACH:
-        if (!(DisableThreadLibraryCalls(hinstDLL)))
-            ;
-        module_main(hinstDLL);
-        // Initialize once for each new process.
-        // Return FALSE to fail DLL load.
-        break;
+        switch (fdwReason)
+        {
+        case DLL_PROCESS_ATTACH:
+            if (!(DisableThreadLibraryCalls(hinstDLL)))
+                ;
+            module_main(hinstDLL);
+            // Initialize once for each new process.
+            // Return FALSE to fail DLL load.
+            break;
 
-    case DLL_THREAD_ATTACH:
-        // Do thread-specific initialization.
-        break;
+        case DLL_THREAD_ATTACH:
+            // Do thread-specific initialization.
+            break;
 
-    case DLL_THREAD_DETACH:
-        // Do thread-specific cleanup.
-        break;
+        case DLL_THREAD_DETACH:
+            // Do thread-specific cleanup.
+            break;
 
-    case DLL_PROCESS_DETACH:
-        // Perform any necessary cleanup.
-        break;
+        case DLL_PROCESS_DETACH:
+            // Perform any necessary cleanup.
+            break;
+        }
+        return TRUE; // Successful DLL_PROCESS_ATTACH.
     }
-    return TRUE; // Successful DLL_PROCESS_ATTACH.
 }
