@@ -13,6 +13,7 @@
 #include "zmod_common.cpp"
 #include "zmod_dw8xlce_frame_time.cpp"
 #include "zmod_dw8xlce_ultrawide.cpp"
+#include "zmod_dw8xlce_camera.cpp"
 
 void module_main(HINSTANCE hinstDLL)
 {
@@ -31,13 +32,21 @@ void module_main(HINSTANCE hinstDLL)
     {
         frame_time::set_ini_defaults(ini);
         ultrawide::set_ini_defaults(ini);
+        camera::set_ini_defaults(ini);
         ini.save();
     }
 
     if (ini.get_bool({L"config", L"enable_frame_time_mod"}))
     {
         frame_time::module_main(ini);
+    }
+    if (ini.get_bool({L"config", L"enable_ultrawide_mod"}))
+    {
         ultrawide::module_main(ini);
+    }
+    if (ini.get_bool({L"config", L"enable_camera_mod"}))
+    {
+        camera::module_main(ini);
     }
 }
 

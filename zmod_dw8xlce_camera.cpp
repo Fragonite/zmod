@@ -27,51 +27,32 @@ namespace camera
         camera blocking;
     };
 
-    void module_main(HINSTANCE instance)
+    void set_ini_defaults(zmod::ini &ini)
+    {
+        ini.set_many({
+            {{L"camera", L"min_distance"}, L"450.0"},
+            {{L"camera", L"max_distance"}, L"500.0"},
+            {{L"camera", L"height"}, L"130.0"},
+            {{L"camera", L"angle"}, L"14.0"},
+            {{L"camera", L"blocking_min_distance"}, L"450.0"},
+            {{L"camera", L"blocking_max_distance"}, L"500.0"},
+            {{L"camera", L"blocking_height"}, L"130.0"},
+            {{L"camera", L"blocking_angle"}, L"0.0"},
+        });
+    }
+
+    void module_main(zmod::ini &ini)
     {
         auto camera = (camera_settings *)(zmod::find_pattern("E1 43 00 00 FA 43") - 2);
 
-        auto module_path = zmod::get_module_path(instance);
-        auto ini_path = module_path.replace_extension(L".ini");
+        camera->standard.min_distance = ini.get_float({L"camera", L"min_distance"});
+        camera->standard.max_distance = ini.get_float({L"camera", L"max_distance"});
+        camera->standard.height = ini.get_float({L"camera", L"height"});
+        camera->standard.angle = (-(ini.get_float({L"camera", L"angle"}))) * (std::numbers::pi / 180.0);
 
-        zmod::ini_map ini = {
-            {{L"standard_camera", L"min_distance"}, L"450.0"},
-            {{L"standard_camera", L"max_distance"}, L"500.0"},
-            {{L"standard_camera", L"height"}, L"130.0"},
-            {{L"standard_camera", L"angle"}, L"14.0"},
-            {{L"blocking_camera", L"min_distance"}, L"450.0"},
-            {{L"blocking_camera", L"max_distance"}, L"500.0"},
-            {{L"blocking_camera", L"height"}, L"130.0"},
-            {{L"blocking_camera", L"angle"}, L"0.0"},
-        };
-
-        if (!(zmod::file_exists(ini_path)))
-        {
-            zmod::write_ini_file(ini_path, ini);
-        }
-        zmod::read_ini_file(ini_path, ini);
-
-        camera->standard.min_distance = std::wcstof(ini[{L"standard_camera", L"min_distance"}].c_str(), nullptr);
-        camera->standard.max_distance = std::wcstof(ini[{L"standard_camera", L"max_distance"}].c_str(), nullptr);
-        camera->standard.height = std::wcstof(ini[{L"standard_camera", L"height"}].c_str(), nullptr);
-        camera->standard.angle = (-(std::wcstof(ini[{L"standard_camera", L"angle"}].c_str(), nullptr))) * (std::numbers::pi / 180.0);
-
-        camera->blocking.min_distance = std::wcstof(ini[{L"blocking_camera", L"min_distance"}].c_str(), nullptr);
-        camera->blocking.max_distance = std::wcstof(ini[{L"blocking_camera", L"max_distance"}].c_str(), nullptr);
-        camera->blocking.height = std::wcstof(ini[{L"blocking_camera", L"height"}].c_str(), nullptr);
-        camera->blocking.angle = (-(std::wcstof(ini[{L"blocking_camera", L"angle"}].c_str(), nullptr))) * (std::numbers::pi / 180.0);
-    }
-
-    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-    {
-        switch (fdwReason)
-        {
-        case DLL_PROCESS_ATTACH:
-            if (!(DisableThreadLibraryCalls(hinstDLL)))
-                ;
-            module_main(hinstDLL);
-            break;
-        }
-        return TRUE;
+        camera->blocking.min_distance = ini.get_float({L"camera", L"blocking_min_distance"});
+        camera->blocking.max_distance = ini.get_float({L"camera", L"blocking_max_distance"});
+        camera->blocking.height = ini.get_float({L"camera", L"blocking_height"});
+        camera->blocking.angle = (-(ini.get_float({L"camera", L"blocking_angle"}))) * (std::numbers::pi / 180.0);
     }
 }
