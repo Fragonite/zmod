@@ -4,7 +4,7 @@
 #include "detours.h"
 #include "zmod_common.cpp"
 
-#pragma comment(linker, "/export:DetourFinishHelperProcess=DetourFinishHelperProcess,@1")
+// #pragma comment(linker, "/export:DetourFinishHelperProcess=DetourFinishHelperProcess,@1")
 #pragma comment(linker, "/export:DirectInput8Create=C:\\Windows\\System32\\dinput8.DirectInput8Create")
 #pragma comment(linker, "/export:DllCanUnloadNow=C:\\Windows\\System32\\dinput8.DllCanUnloadNow")
 #pragma comment(linker, "/export:DllGetClassObject=C:\\Windows\\System32\\dinput8.DllGetClassObject")

@@ -13,7 +13,6 @@
 
 namespace frame_time
 {
-
     typedef void(__stdcall function_1C90D0_t)(LARGE_INTEGER *lpPerformanceCount, uint32_t vsync_30);
     function_1C90D0_t game_wait_hook;
 

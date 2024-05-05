@@ -6,7 +6,6 @@
 
 namespace affinity
 {
-
     typedef uint32_t(__stdcall fn_48F700_t)(uint32_t);
     fn_48F700_t flinch_check_hook;
     fn_48F700_t *flinch_check_orig = nullptr;

@@ -10,7 +10,6 @@
 
 namespace camera
 {
-
     struct camera_settings
     {
         struct camera

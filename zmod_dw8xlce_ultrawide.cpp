@@ -11,14 +11,12 @@
 
 namespace ultrawide
 {
-
     struct
     {
         uint32_t width;
         uint32_t height;
         double aspect_ratio;
         bool windowed;
-        zmod::ini_map ini;
     } globals;
 
     typedef IDirect3D9 *(WINAPI Direct3DCreate9_t)(UINT SDKVersion);
@@ -130,7 +128,8 @@ namespace ultrawide
         }
         else if (nIndex == 1)
         {
-            return 2160; // This hook is a fix for getting 2560x1080 to run in fullscreen without running a higher resolution first
+            // This hook is a fix for getting 2560x1080 to run in fullscreen without running a higher resolution first.
+            return std::max(globals.height, (uint32_t)2160);
         }
         return _GetSystemMetrics(nIndex);
     }
