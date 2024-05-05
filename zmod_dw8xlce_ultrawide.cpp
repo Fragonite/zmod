@@ -1,13 +1,13 @@
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <string>
-#include <filesystem>
-#include <map>
-#include <vector>
-#include <sstream>
-#include "d3d9.h"
-#include "detours.h"
-#include "zmod_common.cpp"
+// #define WIN32_LEAN_AND_MEAN
+// #include <windows.h>
+// #include <string>
+// #include <filesystem>
+// #include <map>
+// #include <vector>
+// #include <sstream>
+// #include "d3d9.h"
+// #include "detours.h"
+// #include "zmod_common.cpp"
 
 namespace ultrawide
 {
@@ -151,28 +151,38 @@ namespace ultrawide
         _AspectRatio(a0, a1);
     }
 
-    void module_main(HINSTANCE instance)
+    void set_ini_defaults(zmod::ini &ini)
     {
-        auto module_path = zmod::get_module_path(instance);
-        auto ini_path = module_path.replace_extension(L".ini");
-        auto module_key = module_path.stem().wstring();
+        ini.set_many({
+            {{L"ultrawide", L"width"}, L"auto"},
+            {{L"ultrawide", L"height"}, L"auto"},
+            {{L"ultrawide", L"fullscreen"}, L"1"},
+        });
+    }
 
-        globals.ini = {
-            {{module_key, L"width"}, L"1280"},
-            {{module_key, L"height"}, L"720"},
-            {{module_key, L"fullscreen"}, L"0"},
-        };
-
-        if (!(zmod::file_exists(ini_path)))
+    void module_main(zmod::ini &ini)
+    {
+        auto width = ini.get_wstring({L"ultrawide", L"width"});
+        if (zmod::to_lower(width) == L"auto")
         {
-            zmod::write_ini_file(ini_path, globals.ini);
+            globals.width = GetSystemMetrics(SM_CXSCREEN);
         }
-        zmod::read_ini_file(ini_path, globals.ini);
+        else
+        {
+            globals.width = ini.get_uint({L"ultrawide", L"width"});
+        }
 
-        globals.width = std::wcstoul(globals.ini[{module_key, L"width"}].c_str(), nullptr, 10);
-        globals.height = std::wcstoul(globals.ini[{module_key, L"height"}].c_str(), nullptr, 10);
+        auto height = ini.get_wstring({L"ultrawide", L"height"});
+        if (zmod::to_lower(height) == L"auto")
+        {
+            globals.height = GetSystemMetrics(SM_CYSCREEN);
+        }
+        else
+        {
+            globals.height = ini.get_uint({L"ultrawide", L"height"});
+        }
         globals.aspect_ratio = (double)globals.width / (double)globals.height;
-        globals.windowed = globals.ini[{module_key, L"fullscreen"}] != L"1";
+        globals.windowed = (ini.get_bool({L"ultrawide", L"fullscreen"})) ? false : true;
 
         struct patch
         {
@@ -225,32 +235,5 @@ namespace ultrawide
         }
         DetourAttach(&(PVOID &)_AspectRatio, HookedAspectRatio);
         DetourTransactionCommit();
-    }
-
-    BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
-    {
-        switch (fdwReason)
-        {
-        case DLL_PROCESS_ATTACH:
-            if (!(DisableThreadLibraryCalls(hinstDLL)))
-                ;
-            module_main(hinstDLL);
-            // Initialize once for each new process.
-            // Return FALSE to fail DLL load.
-            break;
-
-        case DLL_THREAD_ATTACH:
-            // Do thread-specific initialization.
-            break;
-
-        case DLL_THREAD_DETACH:
-            // Do thread-specific cleanup.
-            break;
-
-        case DLL_PROCESS_DETACH:
-            // Perform any necessary cleanup.
-            break;
-        }
-        return TRUE; // Successful DLL_PROCESS_ATTACH.
     }
 }
