@@ -5,8 +5,22 @@
 #include <filesystem>
 #include <stack>
 #include <numbers>
+#include <numeric>
+#include <fstream>
+#include <ostream>
+#include <sstream>
+#include <iostream>
 #include "detours.h"
 #include "zmod_common.cpp"
+
+#define ERROR(...)                                                                                   \
+    do                                                                                               \
+    {                                                                                                \
+        std::ostringstream os;                                                                       \
+        os << "ERROR: " << __VA_ARGS__;                                                              \
+        os << " (FILE: " << __FILE__ << ", LINE: " << __LINE__ << ", FUNCTION: " << __func__ << ")"; \
+        std::cerr << os.str() << std::endl;                                                          \
+    } while (0)
 
 typedef void(fn_7024D0_t)(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30);
 fn_7024D0_t wait_loop;
@@ -17,6 +31,8 @@ fn_21BE00_t *initialise_map_orig = nullptr;
 
 struct
 {
+    std::ofstream log;
+
     double frequency;
     double target_fps;
     double dt_target;
@@ -28,6 +44,12 @@ struct
     double party_level_multiplier;
     uint32_t difficulty;
 } globals;
+
+const uint8_t *find_pattern(const std::string &pattern)
+{
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    return zmod::find_pattern(wo4u, 0xFFFFFF, pattern);
+}
 
 void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t a3, uint32_t a4, uint8_t a5)
 {
@@ -55,16 +77,14 @@ uint32_t calculate_new_map_difficulty()
     double character_levels[3] = {};
 
     // Level 1 officers have a level of 0, so we need to add 1 to the level to correct for the party level multiplier, then subtract 1.
-    auto officer = get_officer_data(vt, party_ids[0]);
-    character_levels[0] = (officer[OFFICER_PROMOTION]) ? 100.0 : (double)officer[OFFICER_LEVEL] + 1.0;
+    for (auto i = 0; i < 3; i++)
+    {
+        auto officer = get_officer_data(vt, party_ids[i]);
+        character_levels[i] = (officer[OFFICER_PROMOTION]) ? 100.0 : (double)officer[OFFICER_LEVEL] + 1.0;
+    }
 
-    officer = get_officer_data(vt, party_ids[1]);
-    character_levels[1] = (officer[OFFICER_PROMOTION]) ? 100.0 : (double)officer[OFFICER_LEVEL] + 1.0;
-
-    officer = get_officer_data(vt, party_ids[2]);
-    character_levels[2] = (officer[OFFICER_PROMOTION]) ? 100.0 : (double)officer[OFFICER_LEVEL] + 1.0;
-
-    return std::round((character_levels[0] + character_levels[1] + character_levels[2]) * globals.party_level_multiplier / 3.0 - 1.0);
+    auto sum = std::accumulate(std::begin(character_levels), std::end(character_levels), 0.0);
+    return std::round(sum * globals.party_level_multiplier / 3.0 - 1.0);
 }
 
 uint32_t calculate_capped_new_map_difficulty()
@@ -150,6 +170,26 @@ void setup_musou_camera_speed_hook()
     zmod::setup_jmp(jmp_site, code);
 }
 
+void setup_unity_magic_camera_speed_hook()
+{
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    auto jmp = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 41 0F 11 84 9D 78 01 00 00");
+    if (jmp)
+    {
+        auto speed = (float)(60.0 / globals.target_fps);
+        auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp + 5), speed);
+        zmod::write_memory_unsafe(code, patch.data(), patch.size());
+        zmod::setup_jmp(jmp, code);
+    }
+    else
+    {
+        ERROR(jmp);
+    }
+}
+
 void setup_physics_speed_hook()
 {
     static const uint8_t code[64] = {};
@@ -193,29 +233,58 @@ void setup_rim_lighting_hook()
     zmod::setup_jmp(jmp_site, code);
 }
 
+void setup_block_cancel_hook(float multiplier)
+{
+    auto jmp = find_pattern("F3 0F 10 8B 2C 01 00 00 0F 2F CE 76 2D") + 22;
+    if (jmp)
+    {
+        static const uint8_t code[64] = {};
+        zmod::unprotect(code, sizeof(code));
+
+        auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp + 5), multiplier);
+        zmod::write_memory_unsafe(code, patch.data(), patch.size());
+        zmod::setup_jmp(jmp, code);
+    }
+    else
+    {
+        ERROR(jmp);
+    }
+}
+
 void module_main(HINSTANCE hinstDLL)
 {
+    globals.log.open(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
+    std::cout.rdbuf(globals.log.rdbuf());
+    std::cerr.rdbuf(globals.log.rdbuf());
+
     auto ini = zmod::ini(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.ini"));
     ini.set_many({
         {{L"config", L"enable_performance_mod"}, L"1"},
         {{L"config", L"enable_camera_mod"}, L"1"},
         {{L"config", L"enable_difficulty_mod"}, L"0"},
+        {{L"config", L"enable_gameplay_mod"}, L"0"},
 
         {{L"performance", L"global_speed_multiplier"}, L"1.0"},
         {{L"performance", L"late_frame_compensation_multiplier"}, L"1.0"},
-        {{L"performance", L"target_fps"}, L"60.0"},
+        {{L"performance", L"process_priority_class"}, L"0x00000080"},
+        {{L"performance", L"target_fps"}, L"auto"},
 
-        {{L"camera", L"min_distance"}, L"510.0"},
-        {{L"camera", L"max_distance"}, L"560.0"},
         {{L"camera", L"angle"}, L"15.4"},
+        {{L"camera", L"max_distance"}, L"560.0"},
+        {{L"camera", L"min_distance"}, L"510.0"},
 
         {{L"difficulty", L"force_chaotic"}, L"1"},
         {{L"difficulty", L"force_pandemonium"}, L"1"},
-        {{L"difficulty", L"scale_sorties_to_party_level"}, L"1"},
-        {{L"difficulty", L"scale_new_weapons_to_party_level"}, L"1"},
-        {{L"difficulty", L"scale_lottery_weapons_to_party_level"}, L"1"},
-        {{L"difficulty", L"update_recommended_lv_ui"}, L"1"},
         {{L"difficulty", L"party_level_multiplier"}, L"1.0"},
+        {{L"difficulty", L"scale_lottery_weapons_to_party_level"}, L"1"},
+        {{L"difficulty", L"scale_new_weapons_to_party_level"}, L"1"},
+        {{L"difficulty", L"scale_sorties_to_party_level"}, L"1"},
+        {{L"difficulty", L"update_recommended_lv_ui"}, L"1"},
+
+        {{L"gameplay", L"block_cancel_delay_multiplier"}, L"1.0"},
+        {{L"gameplay", L"block_cancel_for_everyone"}, L"1"},
+        {{L"gameplay", L"open_all_gates"}, L"1"},
+        {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
     });
     if (ini.exists())
     {
@@ -228,6 +297,15 @@ void module_main(HINSTANCE hinstDLL)
 
     if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0")
     {
+        auto process_priority_class = ini.get_uint({L"performance", L"process_priority_class"});
+        if (process_priority_class)
+        {
+            if (!(SetPriorityClass(GetCurrentProcess(), process_priority_class)))
+            {
+                ERROR(process_priority_class);
+            }
+        }
+
         zmod::set_timer_resolution();
         LARGE_INTEGER frequency;
         QueryPerformanceFrequency(&frequency);
@@ -245,6 +323,7 @@ void module_main(HINSTANCE hinstDLL)
         setup_speed_hook();
         setup_camera_speed_hook();
         setup_musou_camera_speed_hook();
+        setup_unity_magic_camera_speed_hook();
         setup_physics_speed_hook();
         setup_effects_speed_hook();
         setup_rim_lighting_hook();
@@ -341,6 +420,88 @@ void module_main(HINSTANCE hinstDLL)
             auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 8B C8 EB 03", zmod::rel(addr + 5, calculate_capped_new_map_difficulty));
             zmod::write_memory(addr, patch.data(), patch.size());
         }
+    }
+
+    if (ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
+    {
+        // TODO: Implement block cancel for technique and speed characters separately.
+        if (ini.get_wstring({L"gameplay", L"block_cancel_for_everyone"}) != L"0")
+        {
+            // Patch block cancel code that checks for power type character.
+            {
+                auto addr = find_pattern("0F BE 48 02 83 F9 02 0F 46 F9 85 FF 0F 85 E2 00 00 00");
+                if (addr)
+                {
+                    // xor ecx,ecx
+                    // nop 2
+                    auto patch = zmod::parse_hex("31 C9 66 90");
+                    zmod::write_memory(addr, patch.data(), patch.size());
+                }
+                else
+                {
+                    ERROR(addr);
+                }
+            }
+
+            // Patch character type check - all character types pass power type check.
+            {
+                auto addr = find_pattern("E8 E5 15 00 00 E9 C8 03 00 00");
+                if (addr)
+                {
+                    // mov al,01
+                    // nop 3
+                    auto patch = zmod::parse_hex("B0 01 0F 1F 00");
+                    zmod::write_memory(addr, patch.data(), patch.size());
+                }
+                else
+                {
+                    ERROR(addr);
+                }
+            }
+        }
+
+        if (ini.get_wstring({L"gameplay", L"open_all_gates"}) != L"0")
+        {
+            auto addr = find_pattern("75 0D B0 01 48 8B 5C 24 30 48 83 C4 20 5F C3 83 FF 05");
+            if (addr)
+            {
+                auto patch = zmod::parse_hex("66 90");
+                zmod::write_memory(addr, patch.data(), patch.size());
+            }
+            else
+            {
+                ERROR(addr);
+            }
+        }
+
+        if (ini.get_wstring({L"gameplay", L"temporarily_unlock_all_characters"}) != L"0")
+        {
+            // Found in a public cheat table, thanks nakint!
+            auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
+            if (addr)
+            {
+                auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
+                zmod::write_memory(addr, patch.data(), patch.size());
+            }
+            else
+            {
+                ERROR(addr);
+            }
+        }
+    }
+
+    if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0" || ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
+    {
+        auto delta = 1.0;
+        if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0")
+        {
+            delta = 60.0 / globals.target_fps;
+        }
+        if (ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
+        {
+            delta *= ini.get_double({L"gameplay", L"block_cancel_delay_multiplier"});
+        }
+        setup_block_cancel_hook(delta);
     }
 }
 
