@@ -13,11 +13,11 @@
 #include "detours.h"
 #include "zmod_common.cpp"
 
-#define ERROR(...)                                                                                   \
+#define DEBUG(...)                                                                                   \
     do                                                                                               \
     {                                                                                                \
         std::ostringstream os;                                                                       \
-        os << "ERROR: " << __VA_ARGS__;                                                              \
+        os << "DEBUG: " << __VA_ARGS__;                                                              \
         os << " (FILE: " << __FILE__ << ", LINE: " << __LINE__ << ", FUNCTION: " << __func__ << ")"; \
         std::cerr << os.str() << std::endl;                                                          \
     } while (0)
@@ -186,7 +186,7 @@ void setup_unity_magic_camera_speed_hook()
     }
     else
     {
-        ERROR(jmp);
+        DEBUG(jmp);
     }
 }
 
@@ -247,7 +247,7 @@ void setup_block_cancel_hook(float multiplier)
     }
     else
     {
-        ERROR(jmp);
+        DEBUG(jmp);
     }
 }
 
@@ -256,6 +256,8 @@ void module_main(HINSTANCE hinstDLL)
     globals.log.open(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
     std::cout.rdbuf(globals.log.rdbuf());
     std::cerr.rdbuf(globals.log.rdbuf());
+
+    DEBUG("Hello there!");
 
     auto ini = zmod::ini(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.ini"));
     ini.set_many({
@@ -285,6 +287,7 @@ void module_main(HINSTANCE hinstDLL)
         {{L"gameplay", L"block_cancel_for_everyone"}, L"1"},
         {{L"gameplay", L"open_all_gates"}, L"1"},
         {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
+        {{L"gameplay", L"mount_speed"}, L"auto"},
     });
     if (ini.exists())
     {
@@ -300,10 +303,7 @@ void module_main(HINSTANCE hinstDLL)
         auto process_priority_class = ini.get_uint({L"performance", L"process_priority_class"});
         if (process_priority_class)
         {
-            if (!(SetPriorityClass(GetCurrentProcess(), process_priority_class)))
-            {
-                ERROR(process_priority_class);
-            }
+            DEBUG(SetPriorityClass(GetCurrentProcess(), process_priority_class));
         }
 
         zmod::set_timer_resolution();
@@ -393,13 +393,13 @@ void module_main(HINSTANCE hinstDLL)
                 // Sortie selection screen.
                 {
                     auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "0F 45 C8 BA 63 00 00 00");
-                    auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 8B D0 49 8D 9E 50 01 00 00 EB 04", zmod::rel(addr + 5, calculate_new_map_difficulty));
+                    auto patch = zmod::parse_hex("E8 .... 8B D0 49 8D 9E 50 01 00 00 EB 04", zmod::rel(addr + 5, calculate_new_map_difficulty));
                     zmod::write_memory(addr, patch.data(), patch.size());
                 }
                 // Main screen.
                 {
                     auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "BA 63 00 00 00 0F B6 48 05");
-                    auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 8B D0 EB 08", zmod::rel(addr + 5, calculate_new_map_difficulty));
+                    auto patch = zmod::parse_hex("E8 .... 8B D0 EB 08", zmod::rel(addr + 5, calculate_new_map_difficulty));
                     zmod::write_memory(addr, patch.data(), patch.size());
                 }
             }
@@ -430,62 +430,49 @@ void module_main(HINSTANCE hinstDLL)
             // Patch block cancel code that checks for power type character.
             {
                 auto addr = find_pattern("0F BE 48 02 83 F9 02 0F 46 F9 85 FF 0F 85 E2 00 00 00");
-                if (addr)
-                {
-                    // xor ecx,ecx
-                    // nop 2
-                    auto patch = zmod::parse_hex("31 C9 66 90");
-                    zmod::write_memory(addr, patch.data(), patch.size());
-                }
-                else
-                {
-                    ERROR(addr);
-                }
+                DEBUG(addr);
+                // xor ecx,ecx
+                // nop 2
+                auto patch = zmod::parse_hex("31 C9 66 90");
+                zmod::write_memory(addr, patch.data(), patch.size());
             }
 
             // Patch character type check - all character types pass power type check.
             {
                 auto addr = find_pattern("E8 E5 15 00 00 E9 C8 03 00 00");
-                if (addr)
-                {
-                    // mov al,01
-                    // nop 3
-                    auto patch = zmod::parse_hex("B0 01 0F 1F 00");
-                    zmod::write_memory(addr, patch.data(), patch.size());
-                }
-                else
-                {
-                    ERROR(addr);
-                }
+                DEBUG(addr);
+                // mov al,01
+                // nop 3
+                auto patch = zmod::parse_hex("B0 01 0F 1F 00");
+                zmod::write_memory(addr, patch.data(), patch.size());
             }
         }
 
         if (ini.get_wstring({L"gameplay", L"open_all_gates"}) != L"0")
         {
             auto addr = find_pattern("75 0D B0 01 48 8B 5C 24 30 48 83 C4 20 5F C3 83 FF 05");
-            if (addr)
-            {
-                auto patch = zmod::parse_hex("66 90");
-                zmod::write_memory(addr, patch.data(), patch.size());
-            }
-            else
-            {
-                ERROR(addr);
-            }
+            DEBUG(addr);
+            auto patch = zmod::parse_hex("66 90");
+            zmod::write_memory(addr, patch.data(), patch.size());
         }
 
         if (ini.get_wstring({L"gameplay", L"temporarily_unlock_all_characters"}) != L"0")
         {
             // Found in a public cheat table, thanks nakint!
             auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
-            if (addr)
+            DEBUG(addr);
+            auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
+            zmod::write_memory(addr, patch.data(), patch.size());
+        }
+
+        if (ini.get_wstring({L"gameplay", L"mount_speed"}) != L"0")
+        {
+            if (zmod::to_lower(ini.get_wstring({L"gameplay", L"mount_speed"})) != L"auto")
             {
-                auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
+                auto addr = find_pattern("3B D0 0F 42 C2 F3 48 0F 2A C0 F3 0F 59 05 ?? ?? ?? ?? F3 0F 59 C6");
+                DEBUG(addr);
+                auto patch = zmod::parse_hex("B8 ....", ini.get_uint({L"gameplay", L"mount_speed"}));
                 zmod::write_memory(addr, patch.data(), patch.size());
-            }
-            else
-            {
-                ERROR(addr);
             }
         }
     }

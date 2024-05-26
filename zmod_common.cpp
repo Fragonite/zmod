@@ -286,8 +286,11 @@ namespace zmod
     }
 
     template <typename T>
-    void add_replacements_helper(std::vector<uint8_t> &replacements, const T &arg)
+    void add_replacements_helper(std::vector<uint8_t> &replacements, std::vector<std::pair<int, int>> &offsets, const T &arg)
     {
+        // This will be the new offset for the latest argument in the replacements vector.
+        auto offset = replacements.size();
+
         if constexpr (std::is_same_v<T, std::string>)
         {
             for (auto c : arg)
@@ -310,6 +313,9 @@ namespace zmod
                 replacements.push_back(bytes[i]);
             }
         }
+
+        auto size = replacements.size() - offset;
+        offsets.push_back({offset, size});
     }
 
     std::vector<uint8_t> parse_hex(const std::string &hex)
@@ -338,11 +344,38 @@ namespace zmod
         std::string s;
         std::vector<uint8_t> bytes;
         std::vector<uint8_t> replacements;
-        (add_replacements_helper(replacements, args), ...);
+        std::vector<std::pair<int, int>> offsets;
+
+        if (hex.find('.') != std::string::npos && hex.find('?') != std::string::npos)
+        {
+            return bytes;
+        }
+
+        (add_replacements_helper(replacements, offsets, args), ...);
+        auto arg_index = 0;
         auto index = 0;
+
         while (iss >> s)
         {
-            if (s == "??")
+            if (auto dot_count = std::count(s.begin(), s.end(), '.'); dot_count > 0)
+            {
+                for (auto i = 0; i < dot_count; ++i)
+                {
+                    auto offset = offsets[arg_index].first;
+                    auto length = offsets[arg_index].second;
+
+                    if (i < length)
+                    {
+                        bytes.push_back(replacements[offset + i]);
+                    }
+                    else
+                    {
+                        bytes.push_back(0);
+                    }
+                }
+                ++arg_index;
+            }
+            else if (s == "??")
             {
                 if (index < replacements.size())
                 {
