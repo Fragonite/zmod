@@ -8,6 +8,6 @@ cl.exe ^
 /Fe./x64_artifacts/zmod_wo4u ^
 /Fo./x64_artifacts/zmod_wo4u ^
 ../wo4u.cpp ^
-/link ../lib.X64/detours.lib winmm.lib
+/link ../lib.X64/detours.lib winmm.lib user32.lib dwmapi.lib
 move /Y .\x64_artifacts\*.dll .\x64_release
 move /Y .\x64_artifacts\*.exe .\x64_release

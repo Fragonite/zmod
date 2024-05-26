@@ -18,7 +18,7 @@
     do                                                                                               \
     {                                                                                                \
         std::ostringstream os;                                                                       \
-        os << "DEBUG: " << __VA_ARGS__;                                                              \
+        os << "DEBUG: " << (__VA_ARGS__);                                                            \
         os << " (FILE: " << __FILE__ << ", LINE: " << __LINE__ << ", FUNCTION: " << __func__ << ")"; \
         std::cerr << os.str() << std::endl;                                                          \
     } while (0)
@@ -187,7 +187,7 @@ void setup_unity_magic_camera_speed_hook()
     }
     else
     {
-        DEBUG(jmp);
+        DEBUG((intptr_t)jmp);
     }
 }
 
@@ -248,12 +248,17 @@ void setup_block_cancel_hook(float multiplier)
     }
     else
     {
-        DEBUG(jmp);
+        DEBUG((intptr_t)jmp);
     }
 }
 
 void module_main(HINSTANCE hinstDLL)
 {
+    // Save the original buffers.
+    std::streambuf *coutbuf = std::cout.rdbuf();
+    std::streambuf *cerrbuf = std::cerr.rdbuf();
+
+    // Redirect cout and cerr to the log file.
     globals.log.open(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
     std::cout.rdbuf(globals.log.rdbuf());
     std::cerr.rdbuf(globals.log.rdbuf());
@@ -315,12 +320,13 @@ void module_main(HINSTANCE hinstDLL)
         auto target_fps = ini.get_double({L"performance", L"target_fps"});
         auto dt_target = 1.0 / (target_fps * ini.get_double({L"performance", L"global_speed_multiplier"}));
 
-        if (zmod::to_lower(ini.get_wstring({L"frame_time", L"target_fps"})) == L"auto")
+        if (zmod::to_lower(ini.get_wstring({L"performance", L"target_fps"})) == L"auto")
         {
             // Get high resolution timing info.
             DWM_TIMING_INFO timingInfo = {sizeof(DWM_TIMING_INFO)};
             if (DwmGetCompositionTimingInfo(NULL, &timingInfo) == S_OK)
             {
+                DEBUG("DwmGetCompositionTimingInfo may prevent clean shutdown.");
                 target_fps = (double)timingInfo.rateRefresh.uiNumerator / (double)timingInfo.rateRefresh.uiDenominator;
             }
             else
@@ -336,6 +342,7 @@ void module_main(HINSTANCE hinstDLL)
             }
         }
 
+        DEBUG("Target FPS: ", target_fps);
         globals.target_fps = target_fps;
         globals.dt_target = dt_target;
         globals.dt_sleep = dt_target - 0.0016;
@@ -452,7 +459,7 @@ void module_main(HINSTANCE hinstDLL)
             // Patch block cancel code that checks for power type character.
             {
                 auto addr = find_pattern("0F BE 48 02 83 F9 02 0F 46 F9 85 FF 0F 85 E2 00 00 00");
-                DEBUG(addr);
+                DEBUG((intptr_t)addr);
                 // xor ecx,ecx
                 // nop 2
                 auto patch = zmod::parse_hex("31 C9 66 90");
@@ -462,7 +469,7 @@ void module_main(HINSTANCE hinstDLL)
             // Patch character type check - all character types pass power type check.
             {
                 auto addr = find_pattern("E8 E5 15 00 00 E9 C8 03 00 00");
-                DEBUG(addr);
+                DEBUG((intptr_t)addr);
                 // mov al,01
                 // nop 3
                 auto patch = zmod::parse_hex("B0 01 0F 1F 00");
@@ -473,7 +480,7 @@ void module_main(HINSTANCE hinstDLL)
         if (ini.get_wstring({L"gameplay", L"open_all_gates"}) != L"0")
         {
             auto addr = find_pattern("75 0D B0 01 48 8B 5C 24 30 48 83 C4 20 5F C3 83 FF 05");
-            DEBUG(addr);
+            DEBUG((intptr_t)addr);
             auto patch = zmod::parse_hex("66 90");
             zmod::write_memory(addr, patch.data(), patch.size());
         }
@@ -482,7 +489,7 @@ void module_main(HINSTANCE hinstDLL)
         {
             // Found in a public cheat table, thanks nakint!
             auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
-            DEBUG(addr);
+            DEBUG((intptr_t)addr);
             auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
             zmod::write_memory(addr, patch.data(), patch.size());
         }
@@ -492,7 +499,7 @@ void module_main(HINSTANCE hinstDLL)
             if (zmod::to_lower(ini.get_wstring({L"gameplay", L"mount_speed"})) != L"auto")
             {
                 auto addr = find_pattern("3B D0 0F 42 C2 F3 48 0F 2A C0 F3 0F 59 05 ?? ?? ?? ?? F3 0F 59 C6");
-                DEBUG(addr);
+                DEBUG((intptr_t)addr);
                 auto patch = zmod::parse_hex("B8 ....", ini.get_uint({L"gameplay", L"mount_speed"}));
                 zmod::write_memory(addr, patch.data(), patch.size());
             }
@@ -512,6 +519,13 @@ void module_main(HINSTANCE hinstDLL)
         }
         setup_block_cancel_hook(delta);
     }
+
+    // Restore cout and cerr to their original state.
+    std::cout.rdbuf(coutbuf);
+    std::cerr.rdbuf(cerrbuf);
+
+    // Close the log file.
+    globals.log.close();
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)
