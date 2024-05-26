@@ -286,7 +286,7 @@ namespace zmod
     }
 
     template <typename T>
-    void add_replacements_helper(std::vector<uint8_t> &replacements, std::vector<std::pair<int, int>> &offsets, const T &arg)
+    void add_replacements_helper(std::vector<uint8_t> &replacements, std::vector<std::pair<size_t, size_t>> &offsets, const T &arg)
     {
         // This will be the new offset for the latest argument in the replacements vector.
         auto offset = replacements.size();
@@ -344,7 +344,7 @@ namespace zmod
         std::string s;
         std::vector<uint8_t> bytes;
         std::vector<uint8_t> replacements;
-        std::vector<std::pair<int, int>> offsets;
+        std::vector<std::pair<size_t, size_t>> offsets;
 
         if (hex.find('.') != std::string::npos && hex.find('?') != std::string::npos)
         {

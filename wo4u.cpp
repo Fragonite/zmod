@@ -1,6 +1,7 @@
 #define NOMINMAX
 #define WINMM
 #include <Windows.h>
+#include <dwmapi.h>
 #include <map>
 #include <filesystem>
 #include <stack>
@@ -314,6 +315,27 @@ void module_main(HINSTANCE hinstDLL)
         auto target_fps = ini.get_double({L"performance", L"target_fps"});
         auto dt_target = 1.0 / (target_fps * ini.get_double({L"performance", L"global_speed_multiplier"}));
 
+        if (zmod::to_lower(ini.get_wstring({L"frame_time", L"target_fps"})) == L"auto")
+        {
+            // Get high resolution timing info.
+            DWM_TIMING_INFO timingInfo = {sizeof(DWM_TIMING_INFO)};
+            if (DwmGetCompositionTimingInfo(NULL, &timingInfo) == S_OK)
+            {
+                target_fps = (double)timingInfo.rateRefresh.uiNumerator / (double)timingInfo.rateRefresh.uiDenominator;
+            }
+            else
+            {
+                // Get rounded refresh rate as a fallback.
+                DEVMODEW devMode = {0};
+                devMode.dmSize = sizeof(devMode);
+
+                if (EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devMode))
+                {
+                    target_fps = (double)devMode.dmDisplayFrequency;
+                }
+            }
+        }
+
         globals.target_fps = target_fps;
         globals.dt_target = dt_target;
         globals.dt_sleep = dt_target - 0.0016;
@@ -486,7 +508,7 @@ void module_main(HINSTANCE hinstDLL)
         }
         if (ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
         {
-            delta *= ini.get_double({L"gameplay", L"block_cancel_delay_multiplier"});
+            delta /= ini.get_double({L"gameplay", L"block_cancel_delay_multiplier"});
         }
         setup_block_cancel_hook(delta);
     }
