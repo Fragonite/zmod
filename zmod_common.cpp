@@ -118,7 +118,7 @@ namespace zmod
          * @param key The key to get.
          * @return The value.
          */
-        int get_int(const std::pair<std::wstring, std::wstring> &key, int base = 10)
+        int get_int(const std::pair<std::wstring, std::wstring> &key, int base = 0)
         {
             return std::wcstol(data[key].c_str(), nullptr, base);
         }
@@ -128,7 +128,7 @@ namespace zmod
          * @param key The key to get.
          * @return The value.
          */
-        unsigned int get_uint(const std::pair<std::wstring, std::wstring> &key, int base = 10)
+        unsigned int get_uint(const std::pair<std::wstring, std::wstring> &key, int base = 0)
         {
             return std::wcstoul(data[key].c_str(), nullptr, base);
         }
