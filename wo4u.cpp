@@ -14,13 +14,40 @@
 #include "detours.h"
 #include "zmod_common.cpp"
 
-#define DEBUG(...)                                                                                   \
-    do                                                                                               \
-    {                                                                                                \
-        std::ostringstream os;                                                                       \
-        os << "DEBUG: " << (__VA_ARGS__);                                                            \
-        os << " (FILE: " << __FILE__ << ", LINE: " << __LINE__ << ", FUNCTION: " << __func__ << ")"; \
-        std::cerr << os.str() << std::endl;                                                          \
+struct
+{
+    bool ENABLED;
+    std::ofstream LOG;
+    std::streambuf *CERRBUFF;
+} DEBUG_STRUCT;
+#define DEBUG(...)                                                                                       \
+    do                                                                                                   \
+    {                                                                                                    \
+        if (DEBUG_STRUCT.ENABLED)                                                                        \
+        {                                                                                                \
+            std::ostringstream os;                                                                       \
+            os << "DEBUG: " << __VA_ARGS__;                                                              \
+            os << " (FILE: " << __FILE__ << ", LINE: " << __LINE__ << ", FUNCTION: " << __func__ << ")"; \
+            std::cerr << os.str() << std::endl;                                                          \
+        }                                                                                                \
+    } while (0)
+#define DEBUG_INIT(F)                                  \
+    do                                                 \
+    {                                                  \
+        DEBUG_STRUCT.CERRBUFF = std::cerr.rdbuf();     \
+        DEBUG_STRUCT.LOG.open(F);                      \
+        if (DEBUG_STRUCT.LOG)                          \
+        {                                              \
+            std::cerr.rdbuf(DEBUG_STRUCT.LOG.rdbuf()); \
+            DEBUG_STRUCT.ENABLED = true;               \
+        }                                              \
+    } while (0)
+#define DEBUG_SHUTDOWN()                        \
+    do                                          \
+    {                                           \
+        DEBUG_STRUCT.ENABLED = false;           \
+        std::cerr.rdbuf(DEBUG_STRUCT.CERRBUFF); \
+        DEBUG_STRUCT.LOG.close();               \
     } while (0)
 
 typedef void(fn_7024D0_t)(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30);
@@ -32,10 +59,9 @@ fn_21BE00_t *initialise_map_orig = nullptr;
 
 struct
 {
-    std::ofstream log;
-
     double frequency;
     double target_fps;
+    float gameplay_speed;
     double dt_target;
     double dt_sleep;
     double late_frame_compensation_multiplier;
@@ -44,6 +70,7 @@ struct
     void **game_info = nullptr;
     double party_level_multiplier;
     uint32_t difficulty;
+    uint32_t restriction_nullification;
 } globals;
 
 const uint8_t *find_pattern(const std::string &pattern)
@@ -52,10 +79,25 @@ const uint8_t *find_pattern(const std::string &pattern)
     return zmod::find_pattern(wo4u, 0xFFFFFF, pattern);
 }
 
-void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t a3, uint32_t a4, uint8_t a5)
+std::string wo4u_addr(const uint8_t *addr)
 {
-    difficulty = globals.difficulty;
-    initialise_map_orig(map_id, difficulty, a3, a4, a5);
+    auto wo4u = zmod::get_base_address(L"WO4U.dll");
+    std::ostringstream os;
+    os << "WO4U.dll+" << std::hex << intptr_t(addr - wo4u);
+    return os.str();
+}
+
+void initialise_map_hook(uint32_t map_id, uint32_t difficulty, uint32_t restriction_nullification, uint32_t a4, uint8_t a5)
+{
+    if (globals.difficulty)
+    {
+        difficulty = globals.difficulty;
+    }
+    if (globals.restriction_nullification)
+    {
+        restriction_nullification = globals.restriction_nullification;
+    }
+    initialise_map_orig(map_id, difficulty, restriction_nullification, a4, a5);
 }
 
 uint8_t *get_officer_data(void ***vtable, uint64_t officer_id)
@@ -124,8 +166,9 @@ void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
 
 void setup_wait_loop_hook()
 {
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "48 8B 8F 08 18 00 00") - 5;
+    auto addr = find_pattern("48 8B 8F 08 18 00 00") - 5;
+    DEBUG(wo4u_addr(addr));
+
     zmod::setup_call(addr, wait_loop);
 }
 
@@ -134,27 +177,26 @@ void setup_speed_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C9 48 8B C8");
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 0D 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 48 0F 2A C9 48 8B C8");
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto patch = zmod::parse_hex("F3 0F 10 0D 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
-void setup_camera_speed_hook()
+void setup_camera_speed_hook(bool decouple_speed = false)
 {
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 0F 11 46 10");
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 48 0F 2A C0 F3 0F 11 46 10");
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto speed = (decouple_speed) ? (float)(60.0 / globals.target_fps) : globals.gameplay_speed;
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
 void setup_musou_camera_speed_hook()
@@ -162,13 +204,12 @@ void setup_musou_camera_speed_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 0F 11 84 8B 78 01 00 00");
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 48 0F 2A C0 F3 0F 11 84 8B 78 01 00 00");
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
 void setup_unity_magic_camera_speed_hook()
@@ -176,19 +217,12 @@ void setup_unity_magic_camera_speed_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 F3 41 0F 11 84 9D 78 01 00 00");
-    if (jmp)
-    {
-        auto speed = (float)(60.0 / globals.target_fps);
-        auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp + 5), speed);
-        zmod::write_memory_unsafe(code, patch.data(), patch.size());
-        zmod::setup_jmp(jmp, code);
-    }
-    else
-    {
-        DEBUG((intptr_t)jmp);
-    }
+    auto jmp = find_pattern("F3 48 0F 2A C0 F3 41 0F 11 84 9D 78 01 00 00");
+    DEBUG(wo4u_addr(jmp));
+
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
 void setup_physics_speed_hook()
@@ -196,13 +230,12 @@ void setup_physics_speed_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A F0 F3 0F 59 35 ?? ?? ?? ?? 48 83 7F 48 00");
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 35 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 48 0F 2A F0 F3 0F 59 35 ?? ?? ?? ?? 48 83 7F 48 00");
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto patch = zmod::parse_hex("F3 0F 10 35 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
 // Particle lifetime is based on frame rate. This hook only adjusts particle and effect speed.
@@ -211,13 +244,12 @@ void setup_effects_speed_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 48 0F 2A C0 8B 01");
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 48 0F 2A C0 8B 01");
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
 void setup_rim_lighting_hook()
@@ -225,54 +257,194 @@ void setup_rim_lighting_hook()
     static const uint8_t code[64] = {};
     zmod::unprotect(code, sizeof(code));
 
-    auto wo4u = zmod::get_base_address(L"WO4U.dll");
-    auto jmp_site = zmod::find_pattern(wo4u, 0xFFFFFF, "F3 0F 58 83 D8 34 00 00") - 13;
-    auto speed = (float)(60.0 / globals.target_fps);
-    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp_site + 5), speed);
-    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    auto jmp = find_pattern("F3 0F 58 83 D8 34 00 00") - 13;
+    DEBUG(wo4u_addr(jmp));
 
-    zmod::setup_jmp(jmp_site, code);
+    auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), globals.gameplay_speed);
+    zmod::write_memory_unsafe(code, patch.data(), patch.size());
+    zmod::setup_jmp(jmp, code);
 }
 
-void setup_block_cancel_hook(float multiplier)
+void setup_block_cancel_hook(float multiplier, bool everyone_can_cancel)
 {
-    auto jmp = find_pattern("F3 0F 10 8B 2C 01 00 00 0F 2F CE 76 2D") + 22;
-    if (jmp)
-    {
-        static const uint8_t code[64] = {};
-        zmod::unprotect(code, sizeof(code));
+    static const uint8_t code[64] = {};
+    zmod::unprotect(code, sizeof(code));
 
-        auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 ?? ?? ?? ?? ?? ?? ?? ??", zmod::rel(code + 13, jmp + 5), multiplier);
+    // Update block cancel delay.
+    {
+        auto jmp = find_pattern("F3 0F 10 8B 2C 01 00 00 0F 2F CE 76 2D") + 22;
+        DEBUG(wo4u_addr(jmp));
+
+        auto patch = zmod::parse_hex("F3 0F 10 05 05 00 00 00 E9 .... ....", zmod::rel(code + 13, jmp + 5), multiplier);
         zmod::write_memory_unsafe(code, patch.data(), patch.size());
         zmod::setup_jmp(jmp, code);
     }
+
+    if (everyone_can_cancel)
+    {
+        // Patch block cancel code that checks for power type character.
+        {
+            auto addr = find_pattern("0F BE 48 02 83 F9 02 0F 46 F9 85 FF 0F 85 E2 00 00 00");
+            DEBUG(wo4u_addr(addr));
+            // xor ecx,ecx
+            // nop 2
+            auto patch = zmod::parse_hex("31 C9 66 90");
+            zmod::write_memory(addr, patch.data(), patch.size());
+        }
+
+        // Patch character type check - all character types pass power type check.
+        {
+            auto addr = find_pattern("E8 E5 15 00 00 E9 C8 03 00 00");
+            DEBUG(wo4u_addr(addr));
+            // mov al,01
+            // nop 3
+            auto patch = zmod::parse_hex("B0 01 0F 1F 00");
+            zmod::write_memory(addr, patch.data(), patch.size());
+        }
+    }
+}
+
+void setup_scale_sorties_hook(zmod::ini &ini)
+{
+
+    if (ini.get_bool({L"difficulty", L"scale_sorties_to_party_level"}))
+    {
+        // Scale sorties.
+        {
+            auto call = find_pattern("41 0F BE 87 EE 04 00 00");
+            DEBUG(wo4u_addr(call));
+
+            auto patch = zmod::parse_hex("E8 .... 44 8B E0", zmod::rel(call + 5, calculate_new_map_difficulty));
+            zmod::write_memory(call, patch.data(), patch.size());
+        }
+
+        if (ini.get_bool({L"difficulty", L"update_recommended_lv_ui"}))
+        {
+            // Sortie selection screen.
+            {
+                auto addr = find_pattern("0F 45 C8 BA 63 00 00 00");
+                DEBUG(wo4u_addr(addr));
+
+                auto patch = zmod::parse_hex("E8 .... 8B D0 49 8D 9E 50 01 00 00 EB 04", zmod::rel(addr + 5, calculate_new_map_difficulty));
+                zmod::write_memory(addr, patch.data(), patch.size());
+            }
+
+            // Main screen.
+            {
+                auto addr = find_pattern("BA 63 00 00 00 0F B6 48 05");
+                DEBUG(wo4u_addr(addr));
+
+                auto patch = zmod::parse_hex("E8 .... 8B D0 EB 08", zmod::rel(addr + 5, calculate_new_map_difficulty));
+                zmod::write_memory(addr, patch.data(), patch.size());
+            }
+        }
+
+        // Scale new weapons to party level.
+        if (ini.get_bool({L"difficulty", L"scale_new_weapons_to_party_level"}))
+        {
+            auto addr = find_pattern("0F BE 48 04 B8 FF FF FF FF");
+            DEBUG(wo4u_addr(addr));
+
+            auto patch = zmod::parse_hex("E8 .... EB 08", zmod::rel(addr + 5, calculate_capped_new_map_difficulty));
+            zmod::write_memory(addr, patch.data(), patch.size());
+        }
+
+        // Scale lottery weapons to party level.
+        if (ini.get_bool({L"difficulty", L"scale_lottery_weapons_to_party_level"}))
+        {
+            auto addr = find_pattern("0F BE 48 04 8B C6");
+            DEBUG(wo4u_addr(addr));
+
+            auto patch = zmod::parse_hex("E8 .... 8B C8 EB 03", zmod::rel(addr + 5, calculate_capped_new_map_difficulty));
+            zmod::write_memory(addr, patch.data(), patch.size());
+        }
+    }
+}
+
+void setup_open_gates_hook()
+{
+    auto addr = find_pattern("75 0D B0 01 48 8B 5C 24 30 48 83 C4 20 5F C3 83 FF 05");
+    DEBUG(wo4u_addr(addr));
+
+    auto patch = zmod::parse_hex("66 90");
+    zmod::write_memory(addr, patch.data(), patch.size());
+}
+
+void setup_mount_speed_hook(uint32_t speed)
+{
+    auto addr = find_pattern("3B D0 0F 42 C2 F3 48 0F 2A C0 F3 0F 59 05 ?? ?? ?? ?? F3 0F 59 C6");
+    DEBUG(wo4u_addr(addr));
+
+    auto patch = zmod::parse_hex("B8 ....", speed);
+    zmod::write_memory(addr, patch.data(), patch.size());
+}
+
+void setup_camera_hook(zmod::ini &ini)
+{
+    struct camera
+    {
+        float min_distance;
+        float max_distance;
+        float UNKNOWN_PI;
+        float UNKNOWN_ONE_1;
+        float UNKNOWN_ZERO;
+        float height;
+        float UNKNOWN_FIFTEEN;
+        float UNKNOWN_ONE_2;
+        float angle;
+    };
+
+    auto cam = (camera *)find_pattern("00 00 FF 43 00 00 0C 44");
+
+    cam->min_distance = ini.get_float({L"camera", L"min_distance"});
+    cam->max_distance = ini.get_float({L"camera", L"max_distance"});
+    cam->angle = (-(ini.get_float({L"camera", L"angle"}))) * (std::numbers::pi / 180.0);
+
+    DEBUG(std::hex << (intptr_t)cam);
+}
+
+double get_refresh_rate()
+{
+    auto refresh = 60.0;
+    // Get high resolution timing info.
+    DWM_TIMING_INFO timingInfo = {sizeof(DWM_TIMING_INFO)};
+    if (DwmGetCompositionTimingInfo(NULL, &timingInfo) == S_OK)
+    {
+        DEBUG("DwmGetCompositionTimingInfo (may prevent clean shutdown)");
+        refresh = (double)timingInfo.rateRefresh.uiNumerator / (double)timingInfo.rateRefresh.uiDenominator;
+    }
     else
     {
-        DEBUG((intptr_t)jmp);
+        // Get rounded refresh rate as a fallback.
+        DEVMODEW devMode = {0};
+        devMode.dmSize = sizeof(devMode);
+
+        if (EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devMode))
+        {
+            DEBUG("EnumDisplaySettingsW");
+            refresh = (double)devMode.dmDisplayFrequency;
+        }
     }
+
+    DEBUG(refresh);
+    return refresh;
 }
 
 void module_main(HINSTANCE hinstDLL)
 {
-    // Save the original buffers.
-    std::streambuf *coutbuf = std::cout.rdbuf();
-    std::streambuf *cerrbuf = std::cerr.rdbuf();
-
-    // Redirect cout and cerr to the log file.
-    globals.log.open(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
-    std::cout.rdbuf(globals.log.rdbuf());
-    std::cerr.rdbuf(globals.log.rdbuf());
+    DEBUG_INIT(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
 
     DEBUG("Hello there!");
 
     auto ini = zmod::ini(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.ini"));
     ini.set_many({
-        {{L"config", L"enable_performance_mod"}, L"1"},
         {{L"config", L"enable_camera_mod"}, L"1"},
         {{L"config", L"enable_difficulty_mod"}, L"0"},
         {{L"config", L"enable_gameplay_mod"}, L"0"},
+        {{L"config", L"enable_performance_mod"}, L"1"},
 
-        {{L"performance", L"global_speed_multiplier"}, L"1.0"},
+        {{L"performance", L"decouple_camera_speed"}, L"1"},
+        {{L"performance", L"gameplay_speed_multiplier"}, L"1.0"},
         {{L"performance", L"late_frame_compensation_multiplier"}, L"1.0"},
         {{L"performance", L"process_priority_class"}, L"0x00000080"},
         {{L"performance", L"target_fps"}, L"auto"},
@@ -281,18 +453,20 @@ void module_main(HINSTANCE hinstDLL)
         {{L"camera", L"max_distance"}, L"560.0"},
         {{L"camera", L"min_distance"}, L"510.0"},
 
-        {{L"difficulty", L"force_chaotic"}, L"1"},
-        {{L"difficulty", L"force_pandemonium"}, L"1"},
+        {{L"difficulty", L"force_difficulty_chaotic"}, L"1"},
+        {{L"difficulty", L"force_difficulty_pandemonium"}, L"1"},
+        {{L"difficulty", L"force_map_nullification"}, L"0"},
+        {{L"difficulty", L"force_map_restriction"}, L"0"},
         {{L"difficulty", L"party_level_multiplier"}, L"1.0"},
         {{L"difficulty", L"scale_lottery_weapons_to_party_level"}, L"1"},
         {{L"difficulty", L"scale_new_weapons_to_party_level"}, L"1"},
         {{L"difficulty", L"scale_sorties_to_party_level"}, L"1"},
         {{L"difficulty", L"update_recommended_lv_ui"}, L"1"},
 
-        {{L"gameplay", L"block_cancel_delay_multiplier"}, L"1.0"},
+        {{L"gameplay", L"block_cancel_delay_multiplier"}, L"0.5"},
         {{L"gameplay", L"block_cancel_for_everyone"}, L"1"},
         {{L"gameplay", L"open_all_gates"}, L"1"},
-        {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
+        // {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
         {{L"gameplay", L"mount_speed"}, L"auto"},
     });
     if (ini.exists())
@@ -304,12 +478,12 @@ void module_main(HINSTANCE hinstDLL)
         ini.save();
     }
 
-    if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0")
+    if (ini.get_bool({L"config", L"enable_performance_mod"}))
     {
         auto process_priority_class = ini.get_uint({L"performance", L"process_priority_class"});
         if (process_priority_class)
         {
-            DEBUG(SetPriorityClass(GetCurrentProcess(), process_priority_class));
+            DEBUG("SetPriorityClass: " << SetPriorityClass(GetCurrentProcess(), process_priority_class));
         }
 
         zmod::set_timer_resolution();
@@ -318,32 +492,16 @@ void module_main(HINSTANCE hinstDLL)
         globals.frequency = (double)frequency.QuadPart;
 
         auto target_fps = ini.get_double({L"performance", L"target_fps"});
-        auto dt_target = 1.0 / (target_fps * ini.get_double({L"performance", L"global_speed_multiplier"}));
-
         if (zmod::to_lower(ini.get_wstring({L"performance", L"target_fps"})) == L"auto")
         {
-            // Get high resolution timing info.
-            DWM_TIMING_INFO timingInfo = {sizeof(DWM_TIMING_INFO)};
-            if (DwmGetCompositionTimingInfo(NULL, &timingInfo) == S_OK)
-            {
-                DEBUG("DwmGetCompositionTimingInfo may prevent clean shutdown.");
-                target_fps = (double)timingInfo.rateRefresh.uiNumerator / (double)timingInfo.rateRefresh.uiDenominator;
-            }
-            else
-            {
-                // Get rounded refresh rate as a fallback.
-                DEVMODEW devMode = {0};
-                devMode.dmSize = sizeof(devMode);
-
-                if (EnumDisplaySettingsW(NULL, ENUM_CURRENT_SETTINGS, &devMode))
-                {
-                    target_fps = (double)devMode.dmDisplayFrequency;
-                }
-            }
+            target_fps = get_refresh_rate();
         }
 
-        DEBUG("Target FPS: ", target_fps);
+        auto dt_target = 1.0 / target_fps;
+
+        DEBUG("Target FPS: " << target_fps);
         globals.target_fps = target_fps;
+        globals.gameplay_speed = (float)(60.0 / (target_fps / ini.get_double({L"performance", L"gameplay_speed_multiplier"})));
         globals.dt_target = dt_target;
         globals.dt_sleep = dt_target - 0.0016;
         globals.late_frame_compensation_multiplier = std::max(1.0, ini.get_double({L"performance", L"late_frame_compensation_multiplier"}));
@@ -358,30 +516,12 @@ void module_main(HINSTANCE hinstDLL)
         setup_rim_lighting_hook();
     }
 
-    if (ini.get_wstring({L"config", L"enable_camera_mod"}) != L"0")
+    if (ini.get_bool({L"config", L"enable_camera_mod"}))
     {
-        struct camera
-        {
-            float min_distance;
-            float max_distance;
-            float UNKNOWN_PI;
-            float UNKNOWN_ONE_1;
-            float UNKNOWN_ZERO;
-            float height;
-            float UNKNOWN_FIFTEEN;
-            float UNKNOWN_ONE_2;
-            float angle;
-        };
-
-        auto wo4u = zmod::get_base_address(L"WO4U.dll");
-        auto cam = (camera *)zmod::find_pattern(wo4u, 0xFFFFFF, "00 00 FF 43 00 00 0C 44");
-
-        cam->min_distance = ini.get_float({L"camera", L"min_distance"});
-        cam->max_distance = ini.get_float({L"camera", L"max_distance"});
-        cam->angle = (-(ini.get_float({L"camera", L"angle"}))) * (std::numbers::pi / 180.0);
+        setup_camera_hook(ini);
     }
 
-    if (ini.get_wstring({L"config", L"enable_difficulty_mod"}) != L"0")
+    if (ini.get_bool({L"config", L"enable_difficulty_mod"}))
     {
         auto wo4u = zmod::get_base_address(L"WO4U.dll");
         globals.game_vtable = (void ****)(wo4u + 0xF441C0);
@@ -389,143 +529,86 @@ void module_main(HINSTANCE hinstDLL)
         globals.party_level_multiplier = ini.get_double({L"difficulty", L"party_level_multiplier"});
 
         uint32_t difficulty = 0;
-        if (ini.get_wstring({L"difficulty", L"force_chaotic"}) != L"0")
+        if (ini.get_bool({L"difficulty", L"force_chaotic"}))
         {
             difficulty = 3;
         }
-        if (ini.get_wstring({L"difficulty", L"force_pandemonium"}) != L"0")
+        if (ini.get_bool({L"difficulty", L"force_pandemonium"}))
         {
             difficulty = 4;
         }
-        if (difficulty)
+
+        uint32_t restriction_nullification = 0;
+        if (ini.get_bool({L"difficulty", L"force_restriction"}))
+        {
+            restriction_nullification = 1;
+        }
+        if (ini.get_bool({L"difficulty", L"force_nullification"}))
+        {
+            restriction_nullification = 2;
+        }
+        if (difficulty || restriction_nullification)
         {
             globals.difficulty = difficulty;
-            initialise_map_orig = (fn_21BE00_t *)(zmod::find_pattern(wo4u, 0xFFFFFF, "45 33 ED 81 F9 2B 01 00 00") - 0x3F);
+            globals.restriction_nullification = restriction_nullification;
+            initialise_map_orig = (fn_21BE00_t *)(find_pattern("45 33 ED 81 F9 2B 01 00 00") - 0x3F);
+            DEBUG(wo4u_addr((uint8_t *)initialise_map_orig));
+
             DetourTransactionBegin();
             DetourUpdateThread(GetCurrentThread());
             DetourAttach(&(PVOID &)initialise_map_orig, initialise_map_hook);
             DetourTransactionCommit();
         }
 
-        if (ini.get_wstring({L"difficulty", L"scale_sorties_to_party_level"}) != L"0")
+        if (ini.get_bool({L"difficulty", L"scale_sorties_to_party_level"}))
         {
-
-            // Scale sorties.
-            {
-                auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "41 0F BE 87 EE 04 00 00");
-                auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 44 8B E0", zmod::rel(addr + 5, calculate_new_map_difficulty));
-                zmod::write_memory(addr, patch.data(), patch.size());
-            }
-
-            if (ini.get_wstring({L"difficulty", L"update_recommended_lv_ui"}) != L"0")
-            {
-                // Sortie selection screen.
-                {
-                    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "0F 45 C8 BA 63 00 00 00");
-                    auto patch = zmod::parse_hex("E8 .... 8B D0 49 8D 9E 50 01 00 00 EB 04", zmod::rel(addr + 5, calculate_new_map_difficulty));
-                    zmod::write_memory(addr, patch.data(), patch.size());
-                }
-                // Main screen.
-                {
-                    auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "BA 63 00 00 00 0F B6 48 05");
-                    auto patch = zmod::parse_hex("E8 .... 8B D0 EB 08", zmod::rel(addr + 5, calculate_new_map_difficulty));
-                    zmod::write_memory(addr, patch.data(), patch.size());
-                }
-            }
-        }
-
-        // Scale new weapons.
-        if (ini.get_wstring({L"difficulty", L"scale_new_weapons_to_party_level"}) != L"0")
-        {
-            auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "0F BE 48 04 B8 FF FF FF FF");
-            auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? EB 08", zmod::rel(addr + 5, calculate_capped_new_map_difficulty));
-            zmod::write_memory(addr, patch.data(), patch.size());
-        }
-
-        // Scale lottery weapons.
-        if (ini.get_wstring({L"difficulty", L"scale_lottery_weapons_to_party_level"}) != L"0")
-        {
-            auto addr = zmod::find_pattern(wo4u, 0xFFFFFF, "0F BE 48 04 8B C6");
-            auto patch = zmod::parse_hex("E8 ?? ?? ?? ?? 8B C8 EB 03", zmod::rel(addr + 5, calculate_capped_new_map_difficulty));
-            zmod::write_memory(addr, patch.data(), patch.size());
+            setup_scale_sorties_hook(ini);
         }
     }
 
     if (ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
     {
-        // TODO: Implement block cancel for technique and speed characters separately.
-        if (ini.get_wstring({L"gameplay", L"block_cancel_for_everyone"}) != L"0")
+        if (ini.get_bool({L"gameplay", L"open_all_gates"}))
         {
-            // Patch block cancel code that checks for power type character.
-            {
-                auto addr = find_pattern("0F BE 48 02 83 F9 02 0F 46 F9 85 FF 0F 85 E2 00 00 00");
-                DEBUG((intptr_t)addr);
-                // xor ecx,ecx
-                // nop 2
-                auto patch = zmod::parse_hex("31 C9 66 90");
-                zmod::write_memory(addr, patch.data(), patch.size());
-            }
-
-            // Patch character type check - all character types pass power type check.
-            {
-                auto addr = find_pattern("E8 E5 15 00 00 E9 C8 03 00 00");
-                DEBUG((intptr_t)addr);
-                // mov al,01
-                // nop 3
-                auto patch = zmod::parse_hex("B0 01 0F 1F 00");
-                zmod::write_memory(addr, patch.data(), patch.size());
-            }
+            setup_open_gates_hook();
         }
 
-        if (ini.get_wstring({L"gameplay", L"open_all_gates"}) != L"0")
-        {
-            auto addr = find_pattern("75 0D B0 01 48 8B 5C 24 30 48 83 C4 20 5F C3 83 FF 05");
-            DEBUG((intptr_t)addr);
-            auto patch = zmod::parse_hex("66 90");
-            zmod::write_memory(addr, patch.data(), patch.size());
-        }
+        // if (ini.get_bool({L"gameplay", L"temporarily_unlock_all_characters"}))
+        // {
+        //     // Found in a public cheat table, thanks nakint!
+        //     // Actually this code isn't very useful... needs more work.
+        //     auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
+        //     DEBUG((intptr_t)addr);
+        //     auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
+        //     zmod::write_memory(addr, patch.data(), patch.size());
+        // }
 
-        if (ini.get_wstring({L"gameplay", L"temporarily_unlock_all_characters"}) != L"0")
+        if (zmod::to_lower(ini.get_wstring({L"gameplay", L"mount_speed"})) != L"auto")
         {
-            // Found in a public cheat table, thanks nakint!
-            auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
-            DEBUG((intptr_t)addr);
-            auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
-            zmod::write_memory(addr, patch.data(), patch.size());
-        }
-
-        if (ini.get_wstring({L"gameplay", L"mount_speed"}) != L"0")
-        {
-            if (zmod::to_lower(ini.get_wstring({L"gameplay", L"mount_speed"})) != L"auto")
-            {
-                auto addr = find_pattern("3B D0 0F 42 C2 F3 48 0F 2A C0 F3 0F 59 05 ?? ?? ?? ?? F3 0F 59 C6");
-                DEBUG((intptr_t)addr);
-                auto patch = zmod::parse_hex("B8 ....", ini.get_uint({L"gameplay", L"mount_speed"}));
-                zmod::write_memory(addr, patch.data(), patch.size());
-            }
+            setup_mount_speed_hook(ini.get_uint({L"gameplay", L"mount_speed"}));
         }
     }
 
-    if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0" || ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
+    if (ini.get_bool({L"config", L"enable_performance_mod"}) || ini.get_bool({L"config", L"enable_gameplay_mod"}))
     {
         auto delta = 1.0;
-        if (ini.get_wstring({L"config", L"enable_performance_mod"}) != L"0")
+        auto everyone_can_cancel = false;
+
+        if (ini.get_bool({L"config", L"enable_performance_mod"}))
         {
-            delta = 60.0 / globals.target_fps;
+            delta = globals.gameplay_speed;
         }
-        if (ini.get_wstring({L"config", L"enable_gameplay_mod"}) != L"0")
+        if (ini.get_bool({L"config", L"enable_gameplay_mod"}))
         {
             delta /= ini.get_double({L"gameplay", L"block_cancel_delay_multiplier"});
+            everyone_can_cancel = ini.get_bool({L"gameplay", L"block_cancel_for_everyone"});
         }
-        setup_block_cancel_hook(delta);
+
+        setup_block_cancel_hook(delta, everyone_can_cancel);
     }
 
-    // Restore cout and cerr to their original state.
-    std::cout.rdbuf(coutbuf);
-    std::cerr.rdbuf(cerrbuf);
-
-    // Close the log file.
-    globals.log.close();
+    DEBUG_SHUTDOWN();
+    FlushInstructionCache(GetCurrentProcess(), NULL, 0);
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDll, DWORD fdwReason, LPVOID lpReserved)
