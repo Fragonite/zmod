@@ -1,3 +1,5 @@
+#define VERSION "v7.1.0"
+
 #define NOMINMAX
 #define WINMM
 #include <Windows.h>
@@ -83,7 +85,7 @@ std::string wo4u_addr(const uint8_t *addr)
 {
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     std::ostringstream os;
-    os << "WO4U.dll+" << std::hex << intptr_t(addr - wo4u);
+    os << "WO4U.dll+" << std::hex << std::uppercase << intptr_t(addr - wo4u);
     return os.str();
 }
 
@@ -400,7 +402,7 @@ void setup_camera_hook(zmod::ini &ini)
     cam->max_distance = ini.get_float({L"camera", L"max_distance"});
     cam->angle = (-(ini.get_float({L"camera", L"angle"}))) * (std::numbers::pi / 180.0);
 
-    DEBUG(std::hex << (intptr_t)cam);
+    DEBUG(std::hex << std::uppercase << (intptr_t)cam);
 }
 
 double get_refresh_rate()
@@ -426,19 +428,15 @@ double get_refresh_rate()
         }
     }
 
-    DEBUG(refresh);
     return refresh;
 }
 
 void module_main(HINSTANCE hinstDLL)
 {
-    DEBUG_INIT(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
-
-    DEBUG("Hello there!");
-
     auto ini = zmod::ini(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.ini"));
     ini.set_many({
         {{L"config", L"enable_camera_mod"}, L"1"},
+        {{L"config", L"enable_debug_logging"}, L"1"},
         {{L"config", L"enable_difficulty_mod"}, L"0"},
         {{L"config", L"enable_gameplay_mod"}, L"0"},
         {{L"config", L"enable_performance_mod"}, L"1"},
@@ -478,6 +476,37 @@ void module_main(HINSTANCE hinstDLL)
         ini.save();
     }
 
+    if (ini.get_bool({L"config", L"enable_debug_logging"}))
+    {
+        DEBUG_INIT(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_wo4u.log"));
+
+        DEBUG("zmod " << VERSION << " for Warriors Orochi 4 Ultimate 1.0.0.9");
+
+        // Print Windows version.
+        HMODULE hMod = GetModuleHandleW(L"ntdll.dll");
+        if (hMod)
+        {
+            typedef LONG(NTAPI * pNtGetVersion)(OSVERSIONINFOEXW *);
+            pNtGetVersion f = (pNtGetVersion)GetProcAddress(hMod, "RtlGetVersion");
+            if (f)
+            {
+                OSVERSIONINFOEXW osvi = {sizeof(osvi)};
+                LONG status = f(&osvi);
+                if (status == 0)
+                {
+                    DEBUG("Windows Version: " << osvi.dwMajorVersion << "." << osvi.dwMinorVersion << "." << osvi.dwBuildNumber);
+                }
+            }
+        }
+
+        // Print game version.
+        auto wo4u = zmod::get_base_address(L"WO4U.dll");
+        auto product = "34 00 08 00 01 00 50 00 72 00 6F 00 64 00 75 00 63 00 74 00 56 00 65 00 72 00 73 00 69 00 6F 00 6E 00 00 00";
+        auto version = std::wstring((wchar_t *)(zmod::find_pattern(wo4u + 0xFFFFFF, 0xFFFFFF, product) + 36), 7);
+
+        DEBUG("Game Version: " << std::string(version.begin(), version.end()));
+    }
+
     if (ini.get_bool({L"config", L"enable_performance_mod"}))
     {
         auto process_priority_class = ini.get_uint({L"performance", L"process_priority_class"});
@@ -495,11 +524,15 @@ void module_main(HINSTANCE hinstDLL)
         if (zmod::to_lower(ini.get_wstring({L"performance", L"target_fps"})) == L"auto")
         {
             target_fps = get_refresh_rate();
+            DEBUG("Target FPS: " << target_fps << " (auto)");
+        }
+        else
+        {
+            DEBUG("Target FPS: " << target_fps);
         }
 
         auto dt_target = 1.0 / target_fps;
 
-        DEBUG("Target FPS: " << target_fps);
         globals.target_fps = target_fps;
         globals.gameplay_speed = (float)(60.0 / (target_fps / ini.get_double({L"performance", L"gameplay_speed_multiplier"})));
         globals.dt_target = dt_target;
