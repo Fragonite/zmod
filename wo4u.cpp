@@ -85,7 +85,7 @@ std::string wo4u_addr(const uint8_t *addr)
 {
     auto wo4u = zmod::get_base_address(L"WO4U.dll");
     std::ostringstream os;
-    os << "WO4U.dll+" << std::hex << std::uppercase << intptr_t(addr - wo4u);
+    os << "WO4U.dll+" << std::hex << std::uppercase << intptr_t(addr - wo4u) << " (" << intptr_t(addr) << ")";
     return os.str();
 }
 
@@ -638,6 +638,14 @@ void module_main(HINSTANCE hinstDLL)
         }
 
         setup_block_cancel_hook(delta, everyone_can_cancel);
+    }
+
+    for (const auto &[key, value] : ini.get_all())
+    {
+        DEBUG("ini [" + std::string(key.first.begin(), key.first.end()) + "]"
+              << std::string(key.second.begin(), key.second.end())
+              << "="
+              << std::string(value.begin(), value.end()));
     }
 
     DEBUG_SHUTDOWN();

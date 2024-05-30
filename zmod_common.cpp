@@ -143,6 +143,15 @@ namespace zmod
             auto value = to_lower(data[key]);
             return value != L"0" && value != L"false";
         }
+
+        /**
+         * @brief Get all values.
+         * @return Read-only reference to all values.
+         */
+        const map &get_all() const
+        {
+            return data;
+        }
     };
     using ini_map = std::map<std::pair<std::wstring, std::wstring>, std::wstring>;
 
