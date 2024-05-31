@@ -140,8 +140,7 @@ namespace zmod
          */
         bool get_bool(const std::pair<std::wstring, std::wstring> &key)
         {
-            auto value = to_lower(data[key]);
-            return value != L"0" && value != L"false";
+            return (int)get_double(key) == 1 || to_lower(data[key]) == L"true";
         }
 
         /**

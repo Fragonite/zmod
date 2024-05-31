@@ -708,11 +708,11 @@ void module_main(HINSTANCE hinstDLL)
         }
 
         uint32_t restriction_nullification = 0;
-        if (ini.get_bool({L"difficulty", L"force_restriction"}))
+        if (ini.get_bool({L"difficulty", L"force_map_restriction"}))
         {
             restriction_nullification = 1;
         }
-        if (ini.get_bool({L"difficulty", L"force_nullification"}))
+        if (ini.get_bool({L"difficulty", L"force_map_nullification"}))
         {
             restriction_nullification = 2;
         }
