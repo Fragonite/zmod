@@ -698,11 +698,11 @@ void module_main(HINSTANCE hinstDLL)
         globals.party_level_multiplier = ini.get_double({L"difficulty", L"party_level_multiplier"});
 
         uint32_t difficulty = 0;
-        if (ini.get_bool({L"difficulty", L"force_chaotic"}))
+        if (ini.get_bool({L"difficulty", L"force_difficulty_chaotic"}))
         {
             difficulty = 3;
         }
-        if (ini.get_bool({L"difficulty", L"force_pandemonium"}))
+        if (ini.get_bool({L"difficulty", L"force_difficulty_pandemonium"}))
         {
             difficulty = 4;
         }
