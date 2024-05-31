@@ -642,7 +642,9 @@ void module_main(HINSTANCE hinstDLL)
 
     for (const auto &[key, value] : ini.get_all())
     {
-        DEBUG("ini [" + std::string(key.first.begin(), key.first.end()) + "]"
+        DEBUG("ini ["
+              << std::string(key.first.begin(), key.first.end())
+              << "]"
               << std::string(key.second.begin(), key.second.end())
               << "="
               << std::string(value.begin(), value.end()));
