@@ -14,7 +14,7 @@ Includes support for the following:
 
 It is recommended to set the FPS limit in Nvidia Control Panel to your target FPS. This will make the gameplay much smoother, even at 60 Hz.
 
-To install, download the latest release from https://github.com/Fragonite/zmod/releases/latest and extract the contents to your game directory. Configure the ini and run the game (DW8XLCE game version must be 1.0.4.0).
+To install, download the latest release from https://github.com/Fragonite/zmod/releases and extract the contents to your game directory. Configure the ini and run the game (DW8XLCE game version must be 1.0.4.0).
 
 Join the official Discord server if you want to chat: https://discord.gg/wGpX9fnZXn
 
