@@ -4,6 +4,7 @@
 #define WINMM
 #include <Windows.h>
 #include <dwmapi.h>
+#include <array>
 #include <map>
 #include <filesystem>
 #include <stack>
@@ -73,6 +74,8 @@ struct
     double party_level_multiplier;
     uint32_t difficulty;
     uint32_t restriction_nullification;
+
+    std::array<uint32_t, 256> voices;
 } globals;
 
 const uint8_t *find_pattern(const std::string &pattern)
@@ -135,6 +138,19 @@ uint32_t calculate_new_map_difficulty()
 uint32_t calculate_capped_new_map_difficulty()
 {
     return std::min((uint32_t)0x2D, calculate_new_map_difficulty());
+}
+
+/**
+ * @brief Get the new voice for a character.
+ */
+uint32_t voice_lookup(uint32_t character_id)
+{
+    // Bounds check.
+    if (character_id < globals.voices.size())
+    {
+        return globals.voices[character_id];
+    }
+    return character_id;
 }
 
 void wait_loop(LARGE_INTEGER *lpPerformanceCount, uint64_t vsync_30)
@@ -405,6 +421,57 @@ void setup_camera_hook(zmod::ini &ini)
     DEBUG(std::hex << std::uppercase << (intptr_t)cam);
 }
 
+void setup_voice_hook(zmod::ini &ini)
+{
+    // Setup voice lookup table.
+    for (auto i = 0; i < globals.voices.size(); i++)
+    {
+        globals.voices[i] = i;
+    }
+
+    std::wistringstream stream(ini.get_wstring({L"voice", L"voice_map"}));
+    std::wstring pair;
+
+    while (std::getline(stream, pair, L' '))
+    {
+        std::wistringstream pairStream(pair);
+        std::wstring indexStr, valueStr;
+
+        if (std::getline(pairStream, indexStr, L':') && std::getline(pairStream, valueStr))
+        {
+            int32_t index = std::stoul(indexStr);
+            int32_t value = std::stoul(valueStr);
+
+            if (index < globals.voices.size())
+            {
+                globals.voices[index] = value;
+                DEBUG("Setting voice " << index << " to " << value);
+            }
+        }
+    }
+
+    static const uint8_t code[128] = {};
+    zmod::unprotect(code, sizeof(code));
+
+    // Set the initial voice value on map load.
+    {
+        auto jmp = find_pattern("FF 50 10 48 8B 0D 2B 8F CB 00 8B D7 48 8B E8 4C 8B 01 41 FF 50 10 81 7D 58 5D 08 00 00 BA FF FF FF FF") + 38;
+        DEBUG(wo4u_addr(jmp));
+        auto patch = zmod::parse_hex("0F 10 00 0F 11 45 00 50 48 0F BF 4D 06 E8 .... 66 89 45 06 58 E9 ....", zmod::rel(code + 18, voice_lookup), zmod::rel(code + 28, jmp + 7));
+        zmod::write_memory_unsafe(code, patch.data(), patch.size());
+        zmod::setup_jmp(jmp, code);
+    }
+
+    // Load the correct voice data on map load.
+    {
+        auto jmp = find_pattern("BA FF FF FF FF 44 39 45 58 0F 10 00 0F 46 55 58 0F 11 45 00") + 16;
+        DEBUG(wo4u_addr(jmp));
+        auto patch = zmod::parse_hex("0F 11 45 00 50 48 0F BF 4D 06 E8 .... 66 89 45 06 58 0F 10 48 10 E9 ....", zmod::rel(code + 64 + 15, voice_lookup), zmod::rel(code + 64 + 29, jmp + 8));
+        zmod::write_memory_unsafe(code + 64, patch.data(), patch.size());
+        zmod::setup_jmp(jmp, code + 64);
+    }
+}
+
 double get_refresh_rate()
 {
     auto refresh = 60.0;
@@ -440,6 +507,7 @@ void module_main(HINSTANCE hinstDLL)
         {{L"config", L"enable_difficulty_mod"}, L"0"},
         {{L"config", L"enable_gameplay_mod"}, L"0"},
         {{L"config", L"enable_performance_mod"}, L"1"},
+        {{L"config", L"enable_voice_mod"}, L"0"},
 
         {{L"performance", L"decouple_camera_speed"}, L"1"},
         {{L"performance", L"gameplay_speed_multiplier"}, L"1.0"},
@@ -466,6 +534,8 @@ void module_main(HINSTANCE hinstDLL)
         {{L"gameplay", L"open_all_gates"}, L"1"},
         // {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
         {{L"gameplay", L"mount_speed"}, L"auto"},
+
+        {{L"voice", L"voice_map"}, L"0:0 1:1 2:2 3:3"},
     });
     if (ini.exists())
     {
@@ -638,6 +708,11 @@ void module_main(HINSTANCE hinstDLL)
         }
 
         setup_block_cancel_hook(delta, everyone_can_cancel);
+    }
+
+    if (ini.get_bool({L"config", L"enable_voice_mod"}))
+    {
+        setup_voice_hook();
     }
 
     for (const auto &[key, value] : ini.get_all())
