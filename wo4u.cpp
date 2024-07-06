@@ -712,7 +712,7 @@ void module_main(HINSTANCE hinstDLL)
 
     if (ini.get_bool({L"config", L"enable_voice_mod"}))
     {
-        setup_voice_hook();
+        setup_voice_hook(ini);
     }
 
     for (const auto &[key, value] : ini.get_all())
