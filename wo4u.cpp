@@ -124,15 +124,23 @@ uint32_t calculate_new_map_difficulty()
     auto party_ids = (uint16_t *)(&(*(uint8_t **)globals.game_info)[0xF70]);
     double character_levels[3] = {};
 
-    // Level 1 officers have a level of 0, so we need to add 1 to the level to correct for the party level multiplier, then subtract 1.
+    // Level 1 officers have a level of 0, so we need to add 1 to the level to correct for the party level multiplier, then subtract 1 later on.
     for (auto i = 0; i < 3; i++)
     {
         auto officer = get_officer_data(vt, party_ids[i]);
-        character_levels[i] = (officer[OFFICER_PROMOTION]) ? 100.0 : (double)officer[OFFICER_LEVEL] + 1.0;
+        character_levels[i] = (officer[OFFICER_PROMOTION] * 100.0 - 1) + (double)officer[OFFICER_LEVEL] + 1.0;
     }
 
     auto sum = std::accumulate(std::begin(character_levels), std::end(character_levels), 0.0);
-    return std::round(sum * globals.party_level_multiplier / 3.0 - 1.0);
+    auto average = sum * globals.party_level_multiplier / 3.0 - 1.0;
+
+    // From level 50, scale the difficulty half as much.
+    // Otherwise the game becomes fairly difficult around level 100 before upgrade stones.
+    if (average > 50.0)
+    {
+        average = 50.0 + 0.5 * (average - 50.0);
+    }
+    return std::round(average);
 }
 
 uint32_t calculate_capped_new_map_difficulty()
@@ -429,7 +437,7 @@ void setup_voice_hook(zmod::ini &ini)
         globals.voices[i] = i;
     }
 
-    std::wistringstream stream(ini.get_wstring({L"voice", L"voice_map"}));
+    std::wistringstream stream(ini.get_wstring({L"voice", L"character_voice_overrides"}));
     std::wstring pair;
 
     while (std::getline(stream, pair, L' '))
@@ -472,6 +480,67 @@ void setup_voice_hook(zmod::ini &ini)
     }
 }
 
+void setup_deadzone_hook(zmod::ini &ini)
+{
+    // Skip if deadzone is set to auto or the vanilla value.
+    if (zmod::to_lower(ini.get_wstring({L"gameplay", L"deadzone"})) == L"auto")
+    {
+        return;
+    }
+
+    int32_t deadzone = ini.get_int({L"gameplay", L"deadzone"});
+    if (deadzone == 7864)
+    {
+        return;
+    }
+
+    // Deadzone check.
+    auto addr = find_pattern("41 81 F9 B8 1E 00 00 0F 8E 85 00 00 00");
+    DEBUG(wo4u_addr(addr));
+    zmod::write_memory(addr + 3, &deadzone, sizeof(deadzone));
+
+    // Stick deadzones.
+    for (auto i = 0; i < 4; i++)
+    {
+        addr = find_pattern("B8 B8 1E 00 00 66 39 42 ??");
+        DEBUG(wo4u_addr(addr));
+        zmod::write_memory(addr + 1, &deadzone, sizeof(deadzone));
+
+        auto deadzone_neg = -deadzone;
+        addr = find_pattern("B8 48 E1 FF FF 66 39 42 ??");
+        DEBUG(wo4u_addr(addr));
+        zmod::write_memory(addr + 1, &deadzone_neg, sizeof(deadzone_neg));
+    }
+}
+
+void setup_unlock_characters_hook()
+{
+    // Found in a public cheat table, thanks nakint!
+    // Actually this code isn't very useful on its own... needs additional fixes.
+    {
+        auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7") + 11;
+        DEBUG(wo4u_addr(addr));
+        auto patch = zmod::parse_hex("41 B7 01 90");
+        zmod::write_memory(addr, patch.data(), patch.size());
+    }
+
+    // Unlocked characters can access weapon selection screen etc.
+    {
+        auto addr = find_pattern("0F 92 C0 EB 02 32 C0 84 C0 75 41 81 FE C7 00 00 00");
+        DEBUG(wo4u_addr(addr));
+        auto patch = zmod::parse_hex("B0 01 90");
+        zmod::write_memory(addr, patch.data(), patch.size());
+    }
+
+    // Unlocked characters can obtain weapons after battle.
+    {
+        auto addr = find_pattern("0F 92 C0 48 8B 4C 24 30 48 33 CC");
+        DEBUG(wo4u_addr(addr));
+        auto patch = zmod::parse_hex("B0 01 90");
+        zmod::write_memory(addr, patch.data(), patch.size());
+    }
+}
+
 double get_refresh_rate()
 {
     auto refresh = 60.0;
@@ -507,7 +576,7 @@ void module_main(HINSTANCE hinstDLL)
         {{L"config", L"enable_difficulty_mod"}, L"0"},
         {{L"config", L"enable_gameplay_mod"}, L"0"},
         {{L"config", L"enable_performance_mod"}, L"1"},
-        {{L"config", L"enable_voice_mod"}, L"0"},
+        {{L"config", L"enable_voice_mod"}, L"1"},
 
         {{L"performance", L"decouple_camera_speed"}, L"1"},
         {{L"performance", L"gameplay_speed_multiplier"}, L"1.0"},
@@ -532,10 +601,11 @@ void module_main(HINSTANCE hinstDLL)
         {{L"gameplay", L"block_cancel_delay_multiplier"}, L"0.5"},
         {{L"gameplay", L"block_cancel_for_everyone"}, L"1"},
         {{L"gameplay", L"open_all_gates"}, L"1"},
-        // {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
+        {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
         {{L"gameplay", L"mount_speed"}, L"auto"},
+        {{L"gameplay", L"deadzone"}, L"7864"},
 
-        {{L"voice", L"voice_map"}, L"0:0 1:1 2:2 3:3"},
+        {{L"voice", L"character_voice_overrides"}, L"0:0 1:1 2:2 3:3"},
     });
     if (ini.exists())
     {
@@ -676,15 +746,10 @@ void module_main(HINSTANCE hinstDLL)
             setup_open_gates_hook();
         }
 
-        // if (ini.get_bool({L"gameplay", L"temporarily_unlock_all_characters"}))
-        // {
-        //     // Found in a public cheat table, thanks nakint!
-        //     // Actually this code isn't very useful... needs more work.
-        //     auto addr = find_pattern("41 8B 84 91 A4 0F 00 00 0F A3 C8 41 0F 92 C7");
-        //     DEBUG((intptr_t)addr);
-        //     auto patch = zmod::parse_hex("41 B7 01 E9 07 00 00 00");
-        //     zmod::write_memory(addr, patch.data(), patch.size());
-        // }
+        if (ini.get_bool({L"gameplay", L"temporarily_unlock_all_characters"}))
+        {
+            setup_unlock_characters_hook();
+        }
 
         if (zmod::to_lower(ini.get_wstring({L"gameplay", L"mount_speed"})) != L"auto")
         {
