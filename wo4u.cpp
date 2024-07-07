@@ -483,14 +483,10 @@ void setup_voice_hook(zmod::ini &ini)
 void setup_deadzone_hook(zmod::ini &ini)
 {
     // Skip if deadzone is set to auto or the vanilla value.
-    if (zmod::to_lower(ini.get_wstring({L"gameplay", L"deadzone"})) == L"auto")
+    int32_t deadzone = (int32_t)(std::pow(2, 16) * ini.get_double({L"gameplay", L"deadzone"}));
+    if (deadzone == 7864 || zmod::to_lower(ini.get_wstring({L"gameplay", L"deadzone"})) == L"auto")
     {
-        return;
-    }
-
-    int32_t deadzone = ini.get_int({L"gameplay", L"deadzone"});
-    if (deadzone == 7864)
-    {
+        DEBUG("Deadzone value is set to vanilla 7864 (12%)");
         return;
     }
 
@@ -603,7 +599,7 @@ void module_main(HINSTANCE hinstDLL)
         {{L"gameplay", L"open_all_gates"}, L"1"},
         {{L"gameplay", L"temporarily_unlock_all_characters"}, L"0"},
         {{L"gameplay", L"mount_speed"}, L"auto"},
-        {{L"gameplay", L"deadzone"}, L"7864"},
+        {{L"gameplay", L"deadzone"}, L"0.12"},
 
         {{L"voice", L"character_voice_overrides"}, L"0:0 1:1 2:2 3:3"},
     });
