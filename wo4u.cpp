@@ -134,11 +134,11 @@ uint32_t calculate_new_map_difficulty()
     auto sum = std::accumulate(std::begin(character_levels), std::end(character_levels), 0.0);
     auto average = sum * globals.party_level_multiplier / 3.0 - 1.0;
 
-    // From level 50, scale the difficulty half as much.
+    // From level 50, scale the difficulty differently.
     // Otherwise the game becomes fairly difficult around level 100 before upgrade stones.
     if (average > 50.0)
     {
-        average = 50.0 + 0.5 * (average - 50.0);
+        average = 50.0 + 0.4 * (average - 50.0);
     }
     return std::round(average);
 }
