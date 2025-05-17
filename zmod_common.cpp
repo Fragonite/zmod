@@ -218,30 +218,53 @@ namespace zmod
         return std::filesystem::path(system_path);
     }
 
-    const uint8_t *find_pattern_in_memory(const uint8_t *start, const uint8_t *end, const std::vector<uint8_t> &pattern, const std::string &mask)
+    const uint8_t *find_pattern_in_memory(const uint8_t *start_address, size_t search_size, const std::vector<uint8_t> &pattern, const std::string &mask)
     {
-        if (pattern.size() != mask.size())
+        if (pattern.empty() || pattern.size() != mask.size())
         {
             return nullptr;
         }
 
-        for (const uint8_t *current = start; current <= end - pattern.size(); ++current)
+        // Check if the range is valid and large enough for the pattern
+        if (start_address == nullptr || search_size < pattern.size())
         {
-            auto found = true;
-            for (auto i = 0; i < pattern.size(); ++i)
+            return nullptr;
+        }
+
+        bool has_wildcards = (mask.find('?') != std::string::npos);
+        if (!has_wildcards)
+        {
+            // No wildcards, use std::search for potentially faster fixed-pattern search
+            const uint8_t *search_end = start_address + search_size;
+            auto it = std::search(start_address, search_end, pattern.begin(), pattern.end());
+            if (it != search_end)
             {
-                if (mask[i] != '?' && pattern[i] != current[i])
+                return it; // Found
+            }
+            return nullptr; // Not found
+        }
+        else
+        {
+            // Original logic for patterns with wildcards
+            // The loop condition ensures we don't read past the allowed search_size
+            for (const uint8_t *current = start_address; current <= start_address + search_size - pattern.size(); ++current)
+            {
+                bool found_match = true;
+                for (size_t i = 0; i < pattern.size(); ++i)
                 {
-                    found = false;
-                    break;
+                    if (mask[i] != '?' && pattern[i] != current[i])
+                    {
+                        found_match = false;
+                        break;
+                    }
+                }
+                if (found_match)
+                {
+                    return current; // Found
                 }
             }
-            if (found)
-            {
-                return current;
-            }
+            return nullptr; // Not found
         }
-        return nullptr;
     }
 
     const uint8_t *find_pattern(const uint8_t *start, size_t size, const std::vector<uint8_t> &pattern, const std::string &mask)
@@ -263,18 +286,56 @@ namespace zmod
             case PAGE_READONLY:
             case PAGE_READWRITE:
             case PAGE_WRITECOPY:
+                break;
+            default:
+                current = (uint8_t *)mbi.BaseAddress + mbi.RegionSize;
+                continue;
+            }
+
+            auto end = (const uint8_t *)mbi.BaseAddress + mbi.RegionSize;
+            auto size = mbi.RegionSize;
+            if (end > start + size)
             {
-                auto end = (const uint8_t *)mbi.BaseAddress + mbi.RegionSize;
-                if (end > start + size)
-                {
-                    end = start + size;
-                }
-                auto address = find_pattern_in_memory(current, end, pattern, mask);
+                size = start + size - (const uint8_t *)mbi.BaseAddress;
+            }
+
+            auto address = find_pattern_in_memory(current, size, pattern, mask);
+            if (address)
+            {
+                return address;
+            }
+
+            current = (uint8_t *)mbi.BaseAddress + mbi.RegionSize;
+        }
+        return nullptr;
+    }
+
+    const uint8_t *find_pattern_in_private_memory(const std::vector<uint8_t> &pattern, const std::string &mask)
+    {
+        auto current = (const uint8_t *)0;
+        MEMORY_BASIC_INFORMATION mbi;
+        while (VirtualQuery(current, &mbi, sizeof(mbi)))
+        {
+            if (mbi.Type != MEM_PRIVATE)
+            {
+                current = (uint8_t *)mbi.BaseAddress + mbi.RegionSize;
+                continue;
+            }
+
+            switch (mbi.Protect)
+            {
+            case PAGE_EXECUTE_READ:
+            case PAGE_EXECUTE_READWRITE:
+            case PAGE_EXECUTE_WRITECOPY:
+            case PAGE_READONLY:
+            case PAGE_READWRITE:
+            case PAGE_WRITECOPY:
+            {
+                auto address = find_pattern_in_memory((const uint8_t *)mbi.BaseAddress, mbi.RegionSize, pattern, mask);
                 if (address)
                 {
                     return address;
                 }
-                break;
             }
             }
             current = (uint8_t *)mbi.BaseAddress + mbi.RegionSize;
@@ -455,6 +516,12 @@ namespace zmod
         auto base = zmod::get_base_address(nullptr);
         auto [bytes, mask] = parse_hex_mask(pattern);
         return find_pattern(base, 0x1000000, bytes, mask);
+    }
+
+    const uint8_t *find_pattern_in_heap(const std::string &pattern)
+    {
+        auto [bytes, mask] = parse_hex_mask(pattern);
+        return find_pattern_in_private_memory(bytes, mask);
     }
 
     const uint8_t *find_wstring(const std::wstring &str)
