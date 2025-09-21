@@ -66,24 +66,32 @@ namespace bg3
 
     void setup_far_reach_mod(float reach_bonus)
     {
-        // bg3_dx11.exe+E3DB8A - F3 0F10 73 44         - movss xmm6,[rbx+44]
-        // bg3_dx11.exe+E3DB8F - 4C 8B E8              - mov r13,rax
-        // bg3_dx11.exe+E3DB92 - F3 0F10 53 48         - movss xmm2,[rbx+48]
-        // bg3_dx11.exe+E3DB97 - 0F28 C6               - movaps xmm0,xmm6
-        // bg3_dx11.exe+E3DB9A - F3 0F10 0D 9E19AA04   - movss xmm1,[bg3_dx11.exe+58DF540]
-        // bg3_dx11.exe+E3DBA2 - F3 0F5C C2            - subss xmm0,xmm2
-        // bg3_dx11.exe+E3DBA6 - 66 C7 83 70020000 0101 - mov word ptr [rbx+00000270],0101
-        // bg3_dx11.exe+E3DBAF - 45 0F57 DB            - xorps xmm11,xmm11
-        // bg3_dx11.exe+E3DBB3 - 41 0F54 C6            - andps xmm0,xmm14
-        // bg3_dx11.exe+E3DBB7 - 0F2F C8               - comiss xmm1,xmm0
         // bg3_dx11.exe+E3DBBA - 73 26                 - jae bg3_dx11.exe+E3DBE2
         // bg3_dx11.exe+E3DBBC - 41 0F2F F3            - comiss xmm6,xmm11
         // bg3_dx11.exe+E3DBC0 - 72 19                 - jb bg3_dx11.exe+E3DBDB
-        // bg3_dx11.exe+E3DBC2 - 83 7B 54 00           - cmp dword ptr [rbx+54],00
-        static const float reach = reach_bonus;
-        auto movss = zmod::find_pattern("66 C7 83 70 02 00 00 01 01 45 0F 57 DB") - 12;
-        auto rel = zmod::rel(movss + 8, &reach);
-        zmod::write_memory(movss + 4, &rel, sizeof(reach));
+        // bg3_dx11.exe+E3DBC2 - 83 7B 54 00           - cmp dword ptr [rbx+54],00 { 0 }
+        // bg3_dx11.exe+E3DBC6 - 75 13                 - jne bg3_dx11.exe+E3DBDB
+        // bg3_dx11.exe+E3DBC8 - 41 0F2E F3            - ucomiss xmm6,xmm11
+        // bg3_dx11.exe+E3DBCC - 7A 07                 - jp bg3_dx11.exe+E3DBD5
+        // bg3_dx11.exe+E3DBCE - 75 05                 - jne bg3_dx11.exe+E3DBD5
+        // bg3_dx11.exe+E3DBD0 - 0F57 F6               - xorps xmm6,xmm6
+        // bg3_dx11.exe+E3DBD3 - EB 0D                 - jmp bg3_dx11.exe+E3DBE2
+        // bg3_dx11.exe+E3DBD5 - F3 0F58 F1            - addss xmm6,xmm1
+        // bg3_dx11.exe+E3DBD9 - EB 07                 - jmp bg3_dx11.exe+E3DBE2
+        // bg3_dx11.exe+E3DBDB - 0F28 F2               - movaps xmm6,xmm2
+        // bg3_dx11.exe+E3DBDE - F3 0F5C F1            - subss xmm6,xmm1
+        // bg3_dx11.exe+E3DBE2 - F2 44 0F10 43 7C      - movsd xmm8,[rbx+7C]
+
+        static const uint8_t code[64] = {};
+        zmod::unprotect(code, sizeof(code));
+
+        auto jp_jne = zmod::find_pattern("7A 07 75 05 0F 57 F6 EB 0D F3 0F 58 F1");
+
+        auto patch = zmod::parse_hex("7A 06 75 04 0F 57 F6 C3 F3 0F 58 35 .... C3 00 00 00 00 00 00 00 ....", zmod::rel((uint8_t *)code + 16, (uint8_t *)code + 24), reach_bonus);
+        zmod::write_memory_unsafe(code, patch.data(), patch.size());
+
+        auto call = zmod::parse_hex("48 B8 ........ FF D0 90", (intptr_t)&code[0]);
+        zmod::write_memory(jp_jne, call.data(), call.size());
     }
 
     void module_main(HINSTANCE hinstDLL)
