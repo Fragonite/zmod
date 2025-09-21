@@ -14,7 +14,6 @@ namespace bg3
         // Wait 5 seconds for the game to initialise.
         Sleep(5000);
 
-        float *game_speed = nullptr;
         // bg3_dx11.exe+3F3FF9C - FF 15 36052D01        - call qword ptr [bg3_dx11.exe+52104D8]
         // bg3_dx11.exe+3F3FFA2 - 48 8D 8F D0000000     - lea rcx,[rdi+000000D0]
         // bg3_dx11.exe+3F3FFA9 - E8 029C1A00           - call bg3_dx11.exe+40E9BB0
@@ -44,7 +43,7 @@ namespace bg3
         auto mov_offset = *(int32_t *)(reference + 8);
         auto next_instruction = reference + 12;
         auto dereference = *(uint8_t **)(mov_offset + next_instruction);
-        game_speed = (float *)(dereference + 0x40);
+        auto game_speed = (float *)(dereference + 0x40);
 
         *game_speed = speedhack_multiplier;
         auto is_speedhack_enabled = true;
