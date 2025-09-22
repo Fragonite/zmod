@@ -310,6 +310,21 @@ namespace zmod
         return nullptr;
     }
 
+    const uint8_t *alloc_nearby(const uint8_t *target, size_t size)
+    {
+        auto current = target - 1024 * 1024 * 1920; // 1.875GB
+        MEMORY_BASIC_INFORMATION mbi;
+        while (VirtualQuery((LPCVOID)current, &mbi, sizeof(mbi)))
+        {
+            if (mbi.State == MEM_FREE && mbi.RegionSize >= size)
+            {
+                return (uint8_t *)VirtualAlloc(mbi.BaseAddress, size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+            }
+            current = (uint8_t *)mbi.BaseAddress + mbi.RegionSize;
+        }
+        return nullptr; // Allocation failed
+    }
+
     const uint8_t *find_pattern_in_private_memory(const std::vector<uint8_t> &pattern, const std::string &mask)
     {
         auto current = (const uint8_t *)0;
@@ -511,6 +526,12 @@ namespace zmod
         return (uint8_t *)GetModuleHandleW(module_name);
     }
 
+    uint8_t *get_base_address()
+    {
+        // If this parameter is NULL, GetModuleHandle returns a handle to the file used to create the calling process (.exe file).
+        return get_base_address(nullptr);
+    }
+
     const uint8_t *find_pattern(const std::string &pattern)
     {
         auto base = zmod::get_base_address(nullptr);
@@ -565,6 +586,18 @@ namespace zmod
     void setup_jmp(T *pounce, U *splat)
     {
         auto jmp = zmod::parse_hex("E9 ?? ?? ?? ??", rel(pounce + 5, splat));
+        zmod::write_memory(pounce, jmp.data(), jmp.size());
+    }
+
+    /**
+     * @brief Setup a long jump instruction using push rax; mov rax, splat; jmp rax (13 bytes).
+     * @param pounce The address to call from.
+     * @param splat The address to call.
+     */
+    template <typename T, typename U>
+    void setup_push_rax_long_jmp(T *pounce, U *splat)
+    {
+        auto jmp = zmod::parse_hex("50 48 B8 ........ FF E0", (intptr_t)splat);
         zmod::write_memory(pounce, jmp.data(), jmp.size());
     }
 

@@ -63,48 +63,84 @@ namespace bg3
         }
     }
 
-    void setup_far_reach_mod(float reach_bonus)
+    void setup_far_reach_mod(float reach)
     {
-        // bg3_dx11.exe+E3DBBA - 73 26                 - jae bg3_dx11.exe+E3DBE2
-        // bg3_dx11.exe+E3DBBC - 41 0F2F F3            - comiss xmm6,xmm11
-        // bg3_dx11.exe+E3DBC0 - 72 19                 - jb bg3_dx11.exe+E3DBDB
-        // bg3_dx11.exe+E3DBC2 - 83 7B 54 00           - cmp dword ptr [rbx+54],00 { 0 }
-        // bg3_dx11.exe+E3DBC6 - 75 13                 - jne bg3_dx11.exe+E3DBDB
-        // bg3_dx11.exe+E3DBC8 - 41 0F2E F3            - ucomiss xmm6,xmm11
-        // bg3_dx11.exe+E3DBCC - 7A 07                 - jp bg3_dx11.exe+E3DBD5
-        // bg3_dx11.exe+E3DBCE - 75 05                 - jne bg3_dx11.exe+E3DBD5
-        // bg3_dx11.exe+E3DBD0 - 0F57 F6               - xorps xmm6,xmm6
-        // bg3_dx11.exe+E3DBD3 - EB 0D                 - jmp bg3_dx11.exe+E3DBE2
-        // bg3_dx11.exe+E3DBD5 - F3 0F58 F1            - addss xmm6,xmm1
-        // bg3_dx11.exe+E3DBD9 - EB 07                 - jmp bg3_dx11.exe+E3DBE2
-        // bg3_dx11.exe+E3DBDB - 0F28 F2               - movaps xmm6,xmm2
-        // bg3_dx11.exe+E3DBDE - F3 0F5C F1            - subss xmm6,xmm1
-        // bg3_dx11.exe+E3DBE2 - F2 44 0F10 43 7C      - movsd xmm8,[rbx+7C]
+        auto code = zmod::alloc_nearby(zmod::get_base_address(), 0x100);
+        if (code == nullptr)
+        {
+            MessageBoxA(nullptr, "Failed to allocate memory for far reach mod.", "zmod_bg3", MB_ICONERROR);
+            return;
+        }
 
-        static const uint8_t code[64] = {};
-        zmod::unprotect(code, sizeof(code));
+        auto reach_ptr = (float *)code;
+        auto patch_1 = code + 64;
+        auto patch_2 = code + 128;
+        *reach_ptr = reach;
 
-        auto jp_jne = zmod::find_pattern("7A 07 75 05 0F 57 F6 EB 0D F3 0F 58 F1");
+        // Set interaction radius.
+        {
+            auto movss = zmod::find_pattern("F3 0F 10 73 44 4C 8B E8 F3 0F 10 53 48");
 
-        auto patch = zmod::parse_hex("7A 06 75 04 0F 57 F6 C3 F3 0F 58 35 .... C3 00 00 00 00 00 00 00 ....", zmod::rel((uint8_t *)code + 16, (uint8_t *)code + 24), reach_bonus);
-        zmod::write_memory_unsafe(code, patch.data(), patch.size());
+            // cmp dword ptr [rbx+44],00
+            // jz vanilla
+            // movss xmm6,[reach_ptr]
+            // ret
+            // vanilla:
+            // movss xmm6,[rbx+44]
+            // ret
+            auto patch = zmod::parse_hex("83 7B 44 00 74 09 F3 0F 10 35 .... C3 F3 0F 10 73 44 C3", zmod::rel(patch_1 + 14, reach_ptr));
+            zmod::write_memory_unsafe(patch_1, patch.data(), patch.size());
+            zmod::setup_call(movss, patch_1);
+        }
 
-        auto call = zmod::parse_hex("48 B8 ........ FF D0 90", (intptr_t)&code[0]);
-        zmod::write_memory(jp_jne, call.data(), call.size());
+        // Set navigation radius.
+        {
+            auto movss = zmod::find_pattern("F3 0F 10 49 44 F3 0F 10 51 48 0F 28 C1");
+
+            // bg3_dx11.exe+E2FA2F - CC                    - int 3
+            // bg3_dx11.exe+E2FA30 - F3 0F10 49 44         - movss xmm1,[rcx+44]
+            // bg3_dx11.exe+E2FA35 - F3 0F10 51 48         - movss xmm2,[rcx+48]
+            // bg3_dx11.exe+E2FA3A - 0F28 C1               - movaps xmm0,xmm1
+            // bg3_dx11.exe+E2FA3D - F3 0F10 1D FBFAAA04   - movss xmm3,[bg3_dx11.exe+58DF540] { (0.01) }
+            // bg3_dx11.exe+E2FA45 - F3 0F5C C2            - subss xmm0,xmm2
+            // bg3_dx11.exe+E2FA49 - 0F54 05 601DAB04      - andps xmm0,[bg3_dx11.exe+58E17B0] { (2147483647) }
+            // bg3_dx11.exe+E2FA50 - 0F2F D8               - comiss xmm3,xmm0
+            // bg3_dx11.exe+E2FA53 - 73 19                 - jae bg3_dx11.exe+E2FA6E
+            // bg3_dx11.exe+E2FA55 - 0F57 C0               - xorps xmm0,xmm0
+            // bg3_dx11.exe+E2FA58 - 0F2F C8               - comiss xmm1,xmm0
+            // bg3_dx11.exe+E2FA5B - 72 15                 - jb bg3_dx11.exe+E2FA72
+            // bg3_dx11.exe+E2FA5D - 83 79 54 00           - cmp dword ptr [rcx+54],00 { 0 }
+            // bg3_dx11.exe+E2FA61 - 75 0F                 - jne bg3_dx11.exe+E2FA72
+            // bg3_dx11.exe+E2FA63 - 0F2E C8               - ucomiss xmm1,xmm0
+            // bg3_dx11.exe+E2FA66 - 7A 02                 - jp bg3_dx11.exe+E2FA6A
+            // bg3_dx11.exe+E2FA68 - 74 0F                 - je bg3_dx11.exe+E2FA79
+            // bg3_dx11.exe+E2FA6A - F3 0F58 CB            - addss xmm1,xmm3
+            // bg3_dx11.exe+E2FA6E - 0F28 C1               - movaps xmm0,xmm1
+            // bg3_dx11.exe+E2FA71 - C3                    - ret
+            // bg3_dx11.exe+E2FA72 - F3 0F5C D3            - subss xmm2,xmm3
+            // bg3_dx11.exe+E2FA76 - 0F28 C2               - movaps xmm0,xmm2
+            // bg3_dx11.exe+E2FA79 - C3                    - ret
+
+            // movss xmm1,[reach_ptr]
+            // ret
+            auto patch = zmod::parse_hex("F3 0F 10 0D .... C3", zmod::rel(patch_2 + 8, reach_ptr));
+            zmod::write_memory_unsafe(patch_2, patch.data(), patch.size());
+            zmod::setup_call(movss, patch_2);
+        }
     }
 
     void module_main(HINSTANCE hinstDLL)
     {
         auto ini = zmod::ini(zmod::get_module_path(hinstDLL).replace_filename(L"zmod_bg3.ini"));
         ini.set_many({
-            {{L"zmod_bg3", L"enable_speedhack_mod"}, L"true"},
-            {{L"zmod_bg3", L"speedhack_multiplier"}, L"2.0"},
-            {{L"zmod_bg3", L"speedhack_virtual_key_code"}, L"0x87"},
+            {{L"speedhack", L"enable_speedhack_mod"}, L"true"},
+            {{L"speedhack", L"speedhack_multiplier"}, L"2.0"},
+            {{L"speedhack", L"speedhack_virtual_key_code"}, L"0x87"},
 
-            {{L"zmod_bg3", L"enable_far_reach_mod"}, L"true"},
-            {{L"zmod_bg3", L"far_reach_bonus"}, L"1000.0"},
+            {{L"far_reach", L"enable_far_reach_mod"}, L"true"},
+            {{L"far_reach", L"far_reach_distance"}, L"10.0"},
 
-            {{L"zmod_bg3", L"process_priority_class"}, L"0x00000080"},
+            {{L"other", L"process_priority_class"}, L"0x00000080"},
         });
         if (ini.exists())
         {
@@ -117,26 +153,26 @@ namespace bg3
 
         zmod::set_timer_resolution();
 
-        auto process_priority_class = ini.get_uint({L"zmod_bg3", L"process_priority_class"}, 0);
+        auto process_priority_class = ini.get_uint({L"other", L"process_priority_class"}, 0);
         if (process_priority_class != 0)
         {
             if (!(SetPriorityClass(GetCurrentProcess(), process_priority_class)))
                 ;
         }
 
-        if (ini.get_bool({L"zmod_bg3", L"enable_speedhack_mod"}) == true)
+        if (ini.get_bool({L"speedhack", L"enable_speedhack_mod"}) == true)
         {
-            auto speedhack_multiplier = ini.get_float({L"zmod_bg3", L"speedhack_multiplier"});
-            auto speedhack_virtual_key_code = ini.get_int({L"zmod_bg3", L"speedhack_virtual_key_code"}, 0);
+            auto speedhack_multiplier = ini.get_float({L"speedhack", L"speedhack_multiplier"});
+            auto speedhack_virtual_key_code = ini.get_int({L"speedhack", L"speedhack_virtual_key_code"}, 0);
 
             std::thread t(speedhack_toggle_listener, speedhack_multiplier, speedhack_virtual_key_code);
             t.detach();
         }
 
-        if (ini.get_bool({L"zmod_bg3", L"enable_far_reach_mod"}) == true)
+        if (ini.get_bool({L"far_reach", L"enable_far_reach_mod"}) == true)
         {
-            auto reach_bonus = ini.get_float({L"zmod_bg3", L"far_reach_bonus"});
-            setup_far_reach_mod(reach_bonus);
+            auto reach = ini.get_float({L"far_reach", L"far_reach_distance"});
+            setup_far_reach_mod(reach);
         }
     }
 }
